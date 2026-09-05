@@ -11,11 +11,11 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class Verdict(str, Enum):
+class Verdict(StrEnum):
     """What Drosera believes it is talking to.
 
     The ladder matters: ``AUTOMATION`` is a classic scraper (curl, a crawler,
@@ -44,7 +44,7 @@ _VERDICT_RANK = {
 }
 
 
-class Category(str, Enum):
+class Category(StrEnum):
     """Why a signal fired. Used for reporting and for weighting."""
 
     IDENTITY = "identity"
@@ -54,7 +54,7 @@ class Category(str, Enum):
     INTENT = "intent"
 
 
-class Action(str, Enum):
+class Action(StrEnum):
     """What the deployment should do about it."""
 
     ALLOW = "allow"

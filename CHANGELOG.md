@@ -6,6 +6,23 @@ All notable changes to Drosera are recorded here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `FileWatcher` missed a canary modification that happened less than a
+  millisecond after the previous poll. It compared float-seconds timestamps
+  with a 0.001 tolerance, and on a fast filesystem the real gap is smaller than
+  that. Comparisons now use integer nanosecond timestamps, which need no
+  tolerance at all. The watcher also baselines from a live stat when watching
+  starts, and reports separately when a file was already modified before then.
+
+### Changed
+
+- `Verdict`, `Category` and `Action` now subclass `enum.StrEnum` instead of
+  `(str, Enum)`. Behaviour is unchanged for `.value`, comparison and JSON
+  serialisation.
+- Pinned `ruff>=0.16,<0.17` for development. An open-ended range meant a new
+  linter release could fail CI on an unrelated commit.
+
 ## [0.1.0] - 2026-09-05
 
 First release.

@@ -62,6 +62,36 @@ def test_plant_and_registry_round_trip(tmp_path):
     assert (tmp_path / ".env").is_file()
 
 
+def test_file_watcher_catches_an_edit_within_a_millisecond(tmp_path):
+    """The gap between two writes on a fast filesystem is well under a
+    millisecond. An earlier version compared float seconds with a 0.001
+    tolerance and silently missed exactly this case on Linux.
+    """
+    reg = tmp_path / "reg.json"
+    mint.plant(tmp_path, ["dotenv"], SECRET, "example.net", registry=reg)
+    watcher = watch.FileWatcher(reg)
+    watcher.poll()
+    target = tmp_path / ".env"
+    target.write_text("changed", encoding="utf-8")   # no sleep, deliberately
+    assert [h.channel for h in watcher.poll()] == ["file_modified"]
+
+
+def test_file_watcher_reports_a_change_that_predates_watching(tmp_path):
+    reg = tmp_path / "reg.json"
+    mint.plant(tmp_path, ["dotenv"], SECRET, "example.net", registry=reg)
+    target = tmp_path / ".env"
+    # Backdate the planting record so the file looks modified since.
+    canaries = mint.load_registry(reg)
+    canaries[0].mtime = target.stat().st_mtime - 3600
+    mint.save_registry(canaries, reg)
+
+    watcher = watch.FileWatcher(reg)
+    hits = watcher.poll()
+    assert len(hits) == 1
+    assert "before watching began" in hits[0].detail
+    assert watcher.poll() == [], "the backlog must not repeat"
+
+
 def test_file_watcher_notices_modification(tmp_path):
     reg = tmp_path / "reg.json"
     mint.plant(tmp_path, ["dotenv"], SECRET, "example.net", registry=reg)

@@ -10,6 +10,12 @@ confuses them:
     antivirus and file indexers all touch files innocently. A hit here means
     "worth looking at", never "confirmed".
 
+    Comparisons use integer nanosecond timestamps (``st_mtime_ns``) rather than
+    the float seconds a stat reports by default. Float seconds carry roughly
+    120ns of rounding error at current epoch values, which forces a tolerance --
+    and any tolerance big enough to absorb that noise is also big enough to miss
+    a fast edit. Integers need no tolerance at all.
+
 ``scan_for_canaries``
     Looks for a planted credential appearing somewhere it should not -- a
     request body, an outbound payload, a log line. This is *hard* evidence: the
@@ -31,6 +37,16 @@ from .mint import Canary, load_registry, parse_token
 
 TOKEN_RE = re.compile(r"\bdrs[a-z0-9]{12}[a-f0-9]{10}\b")
 AWS_RE = re.compile(r"\bAKIA[A-Z2-7]{16}\b")
+
+
+# An access time must move by more than this to be reported. atime is a soft
+# signal on a coarse clock, so a full second of slack costs nothing.
+ATIME_TOLERANCE_NS = 1_000_000_000
+
+# How far ahead of the planting record an mtime must sit to count as "changed
+# while nobody was watching". Generous enough to ignore float rounding in the
+# registry, tight enough to still be meaningful.
+UNWATCHED_TOLERANCE_S = 1.0
 
 
 @dataclass
@@ -60,17 +76,46 @@ class FileWatcher:
         self.registry_path = registry
         self.canaries: list[Canary] = load_registry(registry)
         self.quiet_atime = quiet_atime
-        self._state: dict[str, tuple[float, float]] = {}
+        self._state: dict[str, tuple[int, int]] = {}
+        self._backlog: list[CanaryHit] = []
         for c in self.canaries:
-            self._state[c.id] = (c.atime, c.mtime)
+            self._baseline(c)
+
+    def _baseline(self, canary: Canary) -> None:
+        """Record where a file stands as watching begins.
+
+        The baseline comes from a live stat rather than from the planting
+        record, so every later comparison is exact. Whatever happened between
+        planting and now is caught separately, by a coarse check that tolerates
+        the float rounding in the registry and surfaces on the first poll.
+        """
+        try:
+            st = Path(canary.path).stat() if canary.path else None
+        except OSError:
+            st = None
+        if st is None:
+            return
+        if canary.mtime and st.st_mtime > canary.mtime + UNWATCHED_TOLERANCE_S:
+            self._backlog.append(
+                CanaryHit(
+                    canary.id,
+                    canary.kind,
+                    "file_modified",
+                    f"{canary.path} was modified before watching began",
+                    canary.path,
+                    time.time(),
+                )
+            )
+        self._state[canary.id] = (st.st_atime_ns, st.st_mtime_ns)
 
     def reload(self) -> None:
         self.canaries = load_registry(self.registry_path)
         for c in self.canaries:
-            self._state.setdefault(c.id, (c.atime, c.mtime))
+            if c.id not in self._state:
+                self._baseline(c)
 
     def poll(self) -> list[CanaryHit]:
-        hits: list[CanaryHit] = []
+        hits, self._backlog = self._backlog, []
         now = time.time()
         for c in self.canaries:
             if not c.path:
@@ -79,12 +124,16 @@ class FileWatcher:
                 st = Path(c.path).stat()
             except OSError:
                 continue
-            prev_a, prev_m = self._state.get(c.id, (c.atime, c.mtime))
-            if st.st_mtime > prev_m + 0.001:
+            prev = self._state.get(c.id)
+            if prev is None:
+                self._state[c.id] = (st.st_atime_ns, st.st_mtime_ns)
+                continue
+            prev_a, prev_m = prev
+            if st.st_mtime_ns > prev_m:
                 hits.append(
                     CanaryHit(c.id, c.kind, "file_modified", f"mtime advanced on {c.path}", c.path, now)
                 )
-            elif st.st_atime > prev_a + 1.0 and not self.quiet_atime:
+            elif st.st_atime_ns > prev_a + ATIME_TOLERANCE_NS and not self.quiet_atime:
                 hits.append(
                     CanaryHit(
                         c.id,
@@ -95,7 +144,7 @@ class FileWatcher:
                         now,
                     )
                 )
-            self._state[c.id] = (st.st_atime, st.st_mtime)
+            self._state[c.id] = (st.st_atime_ns, st.st_mtime_ns)
         return hits
 
     def run(
