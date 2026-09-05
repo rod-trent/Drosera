@@ -99,6 +99,20 @@ LAYOUTS = [
         thumb=(300, 300),
         stem_w=3,
     ),
+    Layout(
+        name="x-card",                       # X summary_large_image link card
+        w=1200, h=628,
+        strand=[(470, 588, 5), (580, 534, 8), (695, 474, 12), (815, 408, 17),
+                (930, 336, 24), (1010, 262, 34), (1108, 145, 56)],
+        x=100, title_y=196, title_size=92,
+        tag_y=312, tag_size=30,
+        body_y=0, body_size=22,
+        rule_y=392, rule_w=260,
+        glow=32,
+        thumb=(500, 262),
+        body_text="",     # deliberately omitted: unreadable at card size
+        stem_w=2,
+    ),
 ]
 
 
@@ -169,8 +183,9 @@ def compose(L: Layout) -> Image.Image:
     d.text((L.x, L.title_y), "DROSERA", font=font("segoeuib.ttf", L.title_size), fill=TEXT)
     d.text((L.x + 6, L.tag_y), "Sweet-looking bait.  Sticky ending.",
            font=font("segoeuisl.ttf", L.tag_size), fill=INK_SOFT)
-    d.text((L.x + 6, L.body_y), L.body_text,
-           font=font("segoeuisl.ttf", L.body_size), fill=MUTED, spacing=10)
+    if L.body_text:
+        d.text((L.x + 6, L.body_y), L.body_text,
+               font=font("segoeuisl.ttf", L.body_size), fill=MUTED, spacing=10)
     d.line([(L.x + 6, L.rule_y), (L.x + 6 + L.rule_w, L.rule_y)], fill=(*INK, 120), width=2)
     d.text((L.x + 6, L.rule_y + 26), "droseraproject.org",
            font=font("consola.ttf", max(20, L.body_size - 3)), fill=MUTED)
@@ -198,7 +213,8 @@ def overlaps_text(L: Layout) -> list[str]:
     """
     top = L.title_y - 10
     bottom = L.rule_y + 60
-    right = L.x + 6 + max(L.rule_w, 660)
+    widest = 660 if L.body_text else 420
+    right = L.x + 6 + max(L.rule_w, widest)
     clashes = []
     for x, y, r in L.strand:
         if top < y + r and y - r < bottom and x - r < right:
