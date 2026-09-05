@@ -62,18 +62,43 @@ def test_plant_and_registry_round_trip(tmp_path):
     assert (tmp_path / ".env").is_file()
 
 
-def test_file_watcher_catches_an_edit_within_a_millisecond(tmp_path):
-    """The gap between two writes on a fast filesystem is well under a
-    millisecond. An earlier version compared float seconds with a 0.001
-    tolerance and silently missed exactly this case on Linux.
+def test_file_watcher_catches_an_immediate_edit(tmp_path):
+    """No sleep, deliberately.
+
+    Two earlier versions missed this. The first compared float seconds with a
+    0.001 tolerance, which is wider than the gap between two writes on a fast
+    filesystem, and failed on Linux. The second compared exact nanoseconds and
+    still failed on Windows, where a file timestamp only advances on the ~15.6ms
+    system clock tick, so both writes shared an mtime. Size is what makes this
+    deterministic on every platform.
     """
     reg = tmp_path / "reg.json"
     mint.plant(tmp_path, ["dotenv"], SECRET, "example.net", registry=reg)
     watcher = watch.FileWatcher(reg)
     watcher.poll()
-    target = tmp_path / ".env"
-    target.write_text("changed", encoding="utf-8")   # no sleep, deliberately
+    (tmp_path / ".env").write_text("changed", encoding="utf-8")
     assert [h.channel for h in watcher.poll()] == ["file_modified"]
+
+
+def test_file_watcher_catches_a_same_size_edit_via_mtime(tmp_path):
+    """Size alone is not enough -- an in-place edit keeps it. mtime is set
+    explicitly here so the assertion does not depend on clock granularity."""
+    import os
+
+    reg = tmp_path / "reg.json"
+    mint.plant(tmp_path, ["dotenv"], SECRET, "example.net", registry=reg)
+    target = tmp_path / ".env"
+    watcher = watch.FileWatcher(reg)
+    watcher.poll()
+
+    original = target.read_bytes()
+    target.write_bytes(original[:-1] + b"X")          # same length
+    assert target.stat().st_size == len(original)
+    os.utime(target, ns=(target.stat().st_atime_ns, target.stat().st_mtime_ns + 5_000_000_000))
+
+    hits = watcher.poll()
+    assert len(hits) == 1
+    assert "mtime advanced" in hits[0].detail
 
 
 def test_file_watcher_reports_a_change_that_predates_watching(tmp_path):
@@ -102,6 +127,16 @@ def test_file_watcher_notices_modification(tmp_path):
     hits = watcher.poll()
     assert len(hits) == 1 and hits[0].channel == "file_modified"
     assert watcher.poll() == [], "a hit should not repeat on the next poll"
+
+
+def test_file_watcher_ignores_an_untouched_file(tmp_path):
+    """Repeated polls of a quiet file must stay silent -- a watcher that cries
+    wolf every interval is worse than no watcher."""
+    reg = tmp_path / "reg.json"
+    mint.plant(tmp_path, ["dotenv", "npmrc"], SECRET, "example.net", registry=reg)
+    watcher = watch.FileWatcher(reg)
+    for _ in range(5):
+        assert watcher.poll() == []
 
 
 # -- sinks -----------------------------------------------------------------

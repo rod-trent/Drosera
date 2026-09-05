@@ -16,6 +16,13 @@ confuses them:
     and any tolerance big enough to absorb that noise is also big enough to miss
     a fast edit. Integers need no tolerance at all.
 
+    File size is compared alongside mtime because on Windows a file timestamp
+    advances only on the system clock tick, about every 15.6ms. Two writes
+    inside one tick therefore share an mtime, and the edit is invisible to a
+    timestamp comparison. Size catches those. An edit that changes neither the
+    size nor the tick is genuinely undetectable this way -- one more reason
+    this channel is a hint and the credential-use channel is the evidence.
+
 ``scan_for_canaries``
     Looks for a planted credential appearing somewhere it should not -- a
     request body, an outbound payload, a log line. This is *hard* evidence: the
@@ -76,7 +83,8 @@ class FileWatcher:
         self.registry_path = registry
         self.canaries: list[Canary] = load_registry(registry)
         self.quiet_atime = quiet_atime
-        self._state: dict[str, tuple[int, int]] = {}
+        # (atime_ns, mtime_ns, size)
+        self._state: dict[str, tuple[int, int, int]] = {}
         self._backlog: list[CanaryHit] = []
         for c in self.canaries:
             self._baseline(c)
@@ -106,7 +114,7 @@ class FileWatcher:
                     time.time(),
                 )
             )
-        self._state[canary.id] = (st.st_atime_ns, st.st_mtime_ns)
+        self._state[canary.id] = (st.st_atime_ns, st.st_mtime_ns, st.st_size)
 
     def reload(self) -> None:
         self.canaries = load_registry(self.registry_path)
@@ -126,12 +134,13 @@ class FileWatcher:
                 continue
             prev = self._state.get(c.id)
             if prev is None:
-                self._state[c.id] = (st.st_atime_ns, st.st_mtime_ns)
+                self._state[c.id] = (st.st_atime_ns, st.st_mtime_ns, st.st_size)
                 continue
-            prev_a, prev_m = prev
-            if st.st_mtime_ns > prev_m:
+            prev_a, prev_m, prev_size = prev
+            changed = _describe_change(st.st_mtime_ns > prev_m, st.st_size != prev_size)
+            if changed:
                 hits.append(
-                    CanaryHit(c.id, c.kind, "file_modified", f"mtime advanced on {c.path}", c.path, now)
+                    CanaryHit(c.id, c.kind, "file_modified", f"{changed} on {c.path}", c.path, now)
                 )
             elif st.st_atime_ns > prev_a + ATIME_TOLERANCE_NS and not self.quiet_atime:
                 hits.append(
@@ -144,7 +153,7 @@ class FileWatcher:
                         now,
                     )
                 )
-            self._state[c.id] = (st.st_atime_ns, st.st_mtime_ns)
+            self._state[c.id] = (st.st_atime_ns, st.st_mtime_ns, st.st_size)
         return hits
 
     def run(
@@ -157,6 +166,16 @@ class FileWatcher:
             for hit in self.poll():
                 on_hit(hit)
             time.sleep(interval)
+
+
+def _describe_change(mtime_moved: bool, size_moved: bool) -> str:
+    if mtime_moved and size_moved:
+        return "mtime and size changed"
+    if mtime_moved:
+        return "mtime advanced"
+    if size_moved:
+        return "size changed"
+    return ""
 
 
 def scan_for_canaries(text: str, secret: str, known: dict[str, Canary] | None = None) -> Iterator[CanaryHit]:

@@ -139,9 +139,12 @@ two channels of very different strength:
 - **Use** (`scan_for_canaries`) — the value appearing anywhere outside the bait
   is *hard* evidence of exfiltration. Shape match first, then HMAC verification,
   so an unrelated lookalike string is not reported.
-- **Read** (`FileWatcher`) — access-time polling. Cheap, immediate, and *soft*:
-  `relatime` only advances atime once a day, `noatime` disables it, and backup
-  agents walk the tree innocently. A hint, never proof.
+- **Read** (`FileWatcher`) — mtime, size and access-time polling. Cheap,
+  immediate, and *soft*: `relatime` only advances atime once a day, `noatime`
+  disables it, and backup agents walk the tree innocently. Size is compared
+  alongside mtime because Windows file timestamps advance only on the ~15.6ms
+  system clock tick, so two writes within one tick share an mtime. An edit that
+  changes neither size nor tick is undetectable here. A hint, never proof.
 
 The module keeps them visibly separate so nobody confuses the two.
 

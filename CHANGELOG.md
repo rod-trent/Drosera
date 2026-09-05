@@ -12,7 +12,9 @@ All notable changes to Drosera are recorded here. Format follows
   millisecond after the previous poll. It compared float-seconds timestamps
   with a 0.001 tolerance, and on a fast filesystem the real gap is smaller than
   that. Comparisons now use integer nanosecond timestamps, which need no
-  tolerance at all. The watcher also baselines from a live stat when watching
+  tolerance at all. It also compares file size, because Windows timestamps
+  advance only on the ~15.6ms system clock tick and two writes inside one tick
+  share an mtime. The watcher now baselines from a live stat when watching
   starts, and reports separately when a file was already modified before then.
 
 ### Changed
