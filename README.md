@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="https://www.droseraproject.org">&#9654; Try it live</a></strong><br>
+  <strong><a href="https://droseraproject.org">&#9654; Try it live</a></strong><br>
   <sub>Watch a crawler score <b>0.0</b> on the LLM axis and an agent score <b>100</b> &mdash; running the real engine.</sub>
 </p>
 
@@ -83,7 +83,7 @@ exfiltration rather than an inference.
 pip install drosera
 ```
 
-See it work — [in your browser](https://www.droseraproject.org), or with no server and no network:
+See it work — [in your browser](https://droseraproject.org), or with no server and no network:
 
 ```bash
 drosera demo
@@ -256,7 +256,7 @@ parts of it are enforced in code.
 
 | | |
 | --- | --- |
-| [**Live playground**](https://www.droseraproject.org) | Score four request traces, or your own browser |
+| [**Live playground**](https://droseraproject.org) | Score four request traces, or your own browser |
 | [Architecture](https://github.com/rod-trent/Drosera/blob/main/docs/architecture.md) | How the pieces fit and why |
 | [Detection signals](https://github.com/rod-trent/Drosera/blob/main/docs/detection-signals.md) | Every signal and its weight |
 | [Deployment](https://github.com/rod-trent/Drosera/blob/main/docs/deployment.md) | Replay, standalone, middleware; tuning and cost control |
