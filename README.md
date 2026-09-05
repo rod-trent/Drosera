@@ -225,7 +225,7 @@ noarchive` in both a meta tag and an HTTP header — a crawler that honours the
 conventions it claims to honour won't ingest a word of it. Canary credentials
 authenticate nowhere. `canary plant` won't overwrite a real `.env`.
 
-**Read [docs/ethics.md](docs/ethics.md) before deploying.** It's short, and
+**Read [docs/ethics.md](https://github.com/rod-trent/Drosera/blob/main/docs/ethics.md) before deploying.** It's short, and
 parts of it are enforced in code.
 
 ## Honest limitations
@@ -251,10 +251,10 @@ parts of it are enforced in code.
 
 | | |
 | --- | --- |
-| [Architecture](docs/architecture.md) | How the pieces fit and why |
-| [Detection signals](docs/detection-signals.md) | Every signal and its weight |
-| [Deployment](docs/deployment.md) | Replay, standalone, middleware; tuning and cost control |
-| [Ethics](docs/ethics.md) | The boundary, and how it's enforced |
+| [Architecture](https://github.com/rod-trent/Drosera/blob/main/docs/architecture.md) | How the pieces fit and why |
+| [Detection signals](https://github.com/rod-trent/Drosera/blob/main/docs/detection-signals.md) | Every signal and its weight |
+| [Deployment](https://github.com/rod-trent/Drosera/blob/main/docs/deployment.md) | Replay, standalone, middleware; tuning and cost control |
+| [Ethics](https://github.com/rod-trent/Drosera/blob/main/docs/ethics.md) | The boundary, and how it's enforced |
 
 ## Commands
 
@@ -273,10 +273,10 @@ drosera doctor     check a deployment for common mistakes
 
 New detection signals, agent-framework behaviour reports, and false-positive
 reports are all especially welcome — the last most of all. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/rod-trent/Drosera/blob/main/CONTRIBUTING.md).
 
 Zero runtime dependencies is a feature. Please keep it that way.
 
 ## License
 
-[Apache 2.0](LICENSE) © 2026 Rod Trent and Drosera contributors
+[Apache 2.0](https://github.com/rod-trent/Drosera/blob/main/LICENSE) © 2026 Rod Trent and Drosera contributors

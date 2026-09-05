@@ -1,0 +1,112 @@
+name: Release
+
+# Publishing uses PyPI Trusted Publishing (OIDC). There is no API token stored
+# anywhere in this repository or in its secrets -- PyPI verifies the workflow's
+# identity directly. A leaked token is the usual way a package gets hijacked,
+# so the safest token is the one that does not exist.
+#
+# One-time setup on PyPI (Manage project -> Publishing -> Add a pending publisher):
+#   Owner: rod-trent   Repository: Drosera
+#   Workflow: release.yml   Environment: pypi
+#
+# To release:  git tag v0.1.0 && git push origin v0.1.0
+# To rehearse: run this workflow manually -- it goes to TestPyPI instead.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: pip install build twine
+
+      - name: Run the test suite
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+          ruff check .
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check metadata renders on PyPI
+        run: twine check --strict dist/*
+
+      - name: Tag must match the packaged version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match pyproject version $pkg"
+            exit 1
+          fi
+          echo "tag v$tag matches packaged version $pkg"
+
+      - name: Confirm the wheel installs with no dependencies
+        run: |
+          python -m venv /tmp/verify
+          /tmp/verify/bin/pip install --quiet dist/*.whl
+          installed=$(/tmp/verify/bin/pip freeze | grep -vci '^drosera' || true)
+          if [ "$installed" != "0" ]; then
+            echo "::error::wheel pulled in unexpected runtime dependencies"
+            /tmp/verify/bin/pip freeze
+            exit 1
+          fi
+          /tmp/verify/bin/drosera --version
+          /tmp/verify/bin/drosera demo > /dev/null
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/drosera
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/drosera
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@v1.14.2

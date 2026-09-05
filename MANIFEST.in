@@ -1,0 +1,8 @@
+# Ship a source distribution a downstream packager can actually verify:
+# tests included so `pytest` works from an unpacked sdist.
+include CHANGELOG.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md
+recursive-include tests *.py
+recursive-include docs *.md *.py
+recursive-include examples *.py *.md
+prune .github
+global-exclude __pycache__ *.py[cod] .DS_Store

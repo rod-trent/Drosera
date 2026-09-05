@@ -19,6 +19,12 @@ All notable changes to Drosera are recorded here. Format follows
 
 ### Changed
 
+- Packaging modernised for PyPI: PEP 639 SPDX licence expression with explicit
+  licence files, a `MANIFEST.in` so the sdist carries tests and docs, and
+  absolute documentation links in the README (relative ones 404 on PyPI).
+- Release is automated via PyPI Trusted Publishing on a `v*` tag. No API token
+  exists in the repository or its secrets.
+
 - `Verdict`, `Category` and `Action` now subclass `enum.StrEnum` instead of
   `(str, Enum)`. Behaviour is unchanged for `.value`, comparison and JSON
   serialisation.
