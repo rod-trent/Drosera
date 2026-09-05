@@ -14,3 +14,9 @@ venv/
 drosera-events.jsonl
 drosera.db
 .drosera/
+
+# Never commit credential exports that land in the working tree by accident.
+PyPI-Recovery-Codes*.txt
+*recovery-codes*
+*.pem
+*.key

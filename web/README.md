@@ -45,16 +45,11 @@ python web/dev.py          # http://127.0.0.1:3000
 
 ### If the deploy fails
 
-The likeliest cause is `requirements.txt`: it installs the engine from GitHub
-over `git+https`, which needs git available in the build image. If that fails,
-publish to PyPI first and pin `drosera==0.1.0` instead.
+Check `requirements.txt` resolves: it pins an exact published version, so a
+yanked or unpublished release will stop the build.
 
-`requirements.txt` currently installs the engine from the GitHub repo. Once
-`drosera` is on PyPI, pin it instead so a deploy cannot drift with `main`:
-
-```
-drosera==0.1.0
-```
+`requirements.txt` pins a published release, so a deploy cannot drift with
+`main`. Bump it deliberately when a new version ships.
 
 ## Why there is no tarpit here
 
