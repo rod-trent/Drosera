@@ -1,0 +1,45 @@
+name: False positive
+description: Drosera called a legitimate client (or a person) automated or an agent
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These are the most valuable reports this project receives. A false
+        positive on a real person is the expensive error, and it is the one we
+        cannot find without you. Thank you for taking the time.
+  - type: input
+    id: verdict
+    attributes:
+      label: What verdict did Drosera give?
+      placeholder: "agent (llm agency 87.4), action=tarpit"
+    validations:
+      required: true
+  - type: input
+    id: actual
+    attributes:
+      label: What was the client actually?
+      placeholder: "A person using Firefox with uBlock Origin and JS enabled"
+    validations:
+      required: true
+  - type: textarea
+    id: signals
+    attributes:
+      label: Which signals fired?
+      description: From the event log, `drosera report`, or `--verbose`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: Request shape
+      description: >
+        Headers, paths and rough timing. Please redact anything identifying —
+        we need the shape, not the person.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Drosera version
+      placeholder: "0.1.0"

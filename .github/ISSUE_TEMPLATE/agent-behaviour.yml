@@ -1,0 +1,37 @@
+name: Agent behaviour observation
+description: How a particular agent or framework consumes pages
+labels: ["signal-research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Concrete observations about how real agent tooling reads a page turn
+        directly into detection signals.
+  - type: input
+    id: framework
+    attributes:
+      label: Agent or framework
+      placeholder: "browser-use 0.x / LangChain WebBaseLoader / a hosted research agent"
+    validations:
+      required: true
+  - type: checkboxes
+    id: channels
+    attributes:
+      label: Which bait channels did it engage with?
+      options:
+        - label: Saw the HTML comment (raw markup)
+        - label: Saw the `display:none` block
+        - label: Saw only rendered text
+        - label: Fetched `/robots.txt`
+        - label: Fetched `/llms.txt`
+        - label: Followed the prose registration instruction
+        - label: Sent the `X-Agent-Purpose` header
+        - label: Fetched CSS/images
+        - label: Executed the JavaScript beacon
+  - type: textarea
+    id: notes
+    attributes:
+      label: What happened
+      description: What it did, how deep it went, and anything that surprised you.
+    validations:
+      required: true

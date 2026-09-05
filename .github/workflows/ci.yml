@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - name: Tests
+        run: pytest -q
+      - name: Lint
+        run: ruff check .
+
+  no-runtime-deps:
+    # Zero runtime dependencies is a design guarantee, so it gets a check
+    # rather than a promise in the README.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install without dev extras
+        run: pip install .
+      - name: Import and run on a bare interpreter
+        run: |
+          pip freeze | grep -vi '^drosera' | grep -v '^$' && {
+            echo "::error::unexpected runtime dependencies installed"; exit 1; } || true
+          python -c "import drosera; print(drosera.__version__)"
+          drosera demo
+          drosera signals > /dev/null
+
+  docs-in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Regenerate the signal reference
+        run: python docs/_gen_signals.py
+      - name: Fail if it differs from the committed copy
+        run: |
+          git diff --exit-code docs/detection-signals.md || {
+            echo "::error::docs/detection-signals.md is stale -- run python docs/_gen_signals.py"
+            exit 1
+          }
+
+  ethics-guardrail:
+    # The inertness check is the project's central safety property. If it stops
+    # rejecting coercive bait, that is a release blocker, not a test failure.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q tests/test_lure_and_trap.py -k "coercive or inert or guardrail"
