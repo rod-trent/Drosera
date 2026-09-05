@@ -1,0 +1,5 @@
+# Until drosera 0.1.0 is on PyPI, install the engine straight from the repo.
+# After the first release, replace this line with a pinned version so a deploy
+# cannot drift with main:
+#   drosera==0.1.0
+drosera @ git+https://github.com/rod-trent/Drosera@main

@@ -17,6 +17,13 @@ All notable changes to Drosera are recorded here. Format follows
   share an mtime. The watcher now baselines from a live stat when watching
   starts, and reports separately when a file was already modified before then.
 
+### Added
+
+- A public playground under `web/`: a Vercel-deployable page that scores four
+  request traces with the real engine, and can score the visitor's own browser.
+  Guarded by `tests/test_playground.py` so the demo cannot drift from the
+  library it is demonstrating.
+
 ### Changed
 
 - Packaging modernised for PyPI: PEP 639 SPDX licence expression with explicit
