@@ -1,0 +1,6 @@
+# Normalize line endings so contributors on Windows and Unix see the same diff.
+* text=auto eol=lf
+
+*.png binary
+*.gif binary
+*.jpg binary
