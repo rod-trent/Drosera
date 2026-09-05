@@ -37,8 +37,21 @@ class Dev(BaseHTTPRequestHandler):
             }
             self._send(200, json.dumps(payload).encode(), "application/json")
             return
-        page = (HERE / "index.html").read_bytes()
-        self._send(200, page, "text/html; charset=utf-8")
+        # Serve the static files Vercel would, so local behaviour matches the
+        # deployment -- notably scenarios.json, which the page now prefers over
+        # the API.
+        name = self.path.split("?")[0].lstrip("/")
+        static = {
+            "scenarios.json": "application/json",
+            "icon.svg": "image/svg+xml",
+            "favicon.ico": "image/vnd.microsoft.icon",
+            "og.png": "image/png",
+            "apple-touch-icon.png": "image/png",
+        }
+        if name in static and (HERE / name).is_file():
+            self._send(200, (HERE / name).read_bytes(), static[name])
+            return
+        self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)

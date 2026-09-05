@@ -1,0 +1,603 @@
+{
+ "drosera": "0.1.0",
+ "scenarios": {
+  "agent": {
+   "action": "tarpit",
+   "agency": 100.0,
+   "automation": 100.0,
+   "hostility": 14.5,
+   "label": "An LLM agent",
+   "note": "Reads the notice, understands it, registers with the ticket and states its purpose.",
+   "requests": 5,
+   "scenario": "agent",
+   "signals": [
+    {
+     "agency": 0.96,
+     "category": "comprehension",
+     "description": "Returned the per-session registration ticket that appeared only inside a prose notice. Requires reading and following an instruction.",
+     "detail": "returned registration ticket via query param 'ticket'",
+     "hostility": 0.0,
+     "id": "cmp.ticket_echo",
+     "proves_llm": true
+    },
+    {
+     "agency": 0.92,
+     "category": "comprehension",
+     "description": "Sent the custom purpose header the prose notice asked for. No crawler invents a header name from a sentence.",
+     "detail": "sent X-Agent-Purpose: 'Collecting public pricing pages to build a market comparison report.'",
+     "hostility": 0.0,
+     "id": "cmp.purpose_header",
+     "proves_llm": true
+    },
+    {
+     "agency": 0.9,
+     "category": "comprehension",
+     "description": "Requested a path that was described in prose but never linked, so it cannot be reached by extracting hrefs.",
+     "detail": "requested prose-only endpoint /.well-known/agent-registration",
+     "hostility": 0.0,
+     "id": "cmp.instruction_path",
+     "proves_llm": true
+    },
+    {
+     "agency": 0.88,
+     "category": "comprehension",
+     "description": "Self-declared purpose is a natural-language sentence rather than a fixed marker or scanner payload.",
+     "detail": "purpose header reads as natural language",
+     "hostility": 0.0,
+     "id": "cmp.purpose_prose",
+     "proves_llm": true
+    },
+    {
+     "agency": 0.55,
+     "category": "bait",
+     "description": "Followed a link hidden with display:none and aria-hidden. Invisible to sighted users and skipped by screen readers.",
+     "detail": "followed hidden link /library/catalog/0f02bcf5",
+     "hostility": 0.1,
+     "id": "bait.hidden_link",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.4,
+     "category": "identity",
+     "description": "User-Agent is a raw HTTP client library rather than a browser.",
+     "detail": "UA is HTTP client 'python-httpx'",
+     "hostility": 0.05,
+     "id": "id.http_library",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.25,
+     "category": "behavior",
+     "description": "Pages were fetched but the in-page JavaScript beacon never fired, so nothing executed the document.",
+     "detail": "2 documents, beacon never fired",
+     "hostility": 0.0,
+     "id": "beh.no_beacon",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.23,
+     "category": "behavior",
+     "description": "Fetched several HTML documents and zero CSS, images or fonts.",
+     "detail": "3 documents, 0 assets",
+     "hostility": 0.0,
+     "id": "beh.no_assets",
+     "proves_llm": false
+    }
+   ],
+   "timeline": [
+    {
+     "agency": 0.0,
+     "at": 0.0,
+     "automation": 40.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library"
+     ],
+     "target": "/",
+     "verdict": "unknown"
+    },
+    {
+     "agency": 0.0,
+     "at": 1.4,
+     "automation": 55.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "beh.no_beacon"
+     ],
+     "target": "/llms.txt",
+     "verdict": "automation"
+    },
+    {
+     "agency": 100.0,
+     "at": 2.6,
+     "automation": 100.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "cmp.instruction_path",
+      "cmp.ticket_echo",
+      "cmp.purpose_header",
+      "cmp.purpose_prose",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/.well-known/agent-registration?ticket=drs-09a8875cd1-2d5fc9d18f",
+     "verdict": "agent"
+    },
+    {
+     "agency": 100.0,
+     "at": 3.9,
+     "automation": 100.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "bait.hidden_link",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/library/catalog/0f02bcf5",
+     "verdict": "agent"
+    },
+    {
+     "agency": 100.0,
+     "at": 5.2,
+     "automation": 100.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/archive/index/a1/folio-2201",
+     "verdict": "agent"
+    }
+   ],
+   "verdict": "agent"
+  },
+  "crawler": {
+   "action": "observe",
+   "agency": 0.0,
+   "automation": 92.7,
+   "hostility": 15.0,
+   "label": "An ordinary crawler",
+   "note": "Reads robots.txt, walks the sitemap at a steady rate, fetches no assets.",
+   "requests": 7,
+   "scenario": "crawler",
+   "signals": [
+    {
+     "agency": 0.45,
+     "category": "identity",
+     "description": "Claims to be a browser but omits headers every real browser sends (Sec-Fetch-*, Accept-Language).",
+     "detail": "browser UA without Sec-Fetch-* or Accept-Language",
+     "hostility": 0.15,
+     "id": "id.ua_inconsistent",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.4,
+     "category": "behavior",
+     "description": "Inter-request timing is unnaturally regular.",
+     "detail": "cv=0.000 over 5 intervals",
+     "hostility": 0.0,
+     "id": "beh.uniform_cadence",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.25,
+     "category": "behavior",
+     "description": "Pages were fetched but the in-page JavaScript beacon never fired, so nothing executed the document.",
+     "detail": "2 documents, beacon never fired",
+     "hostility": 0.0,
+     "id": "beh.no_beacon",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.23,
+     "category": "behavior",
+     "description": "Fetched several HTML documents and zero CSS, images or fonts.",
+     "detail": "3 documents, 0 assets",
+     "hostility": 0.0,
+     "id": "beh.no_assets",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.2,
+     "category": "identity",
+     "description": "Browser-shaped User-Agent paired with Accept: */*.",
+     "detail": "browser UA with Accept: */*",
+     "hostility": 0.0,
+     "id": "id.accept_wildcard",
+     "proves_llm": false
+    }
+   ],
+   "timeline": [
+    {
+     "agency": 0.0,
+     "at": 0.0,
+     "automation": 56.0,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard"
+     ],
+     "target": "/robots.txt",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 1.05,
+     "automation": 67.0,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard",
+      "beh.no_beacon"
+     ],
+     "target": "/",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 2.1,
+     "automation": 78.7,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/about",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 3.15,
+     "automation": 84.6,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/services",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 4.2,
+     "automation": 86.2,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/careers",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 5.25,
+     "automation": 92.7,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard",
+      "beh.no_assets",
+      "beh.no_beacon",
+      "beh.uniform_cadence"
+     ],
+     "target": "/status",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 6.3,
+     "automation": 92.7,
+     "method": "GET",
+     "new_signals": [
+      "id.ua_inconsistent",
+      "id.accept_wildcard",
+      "beh.no_assets",
+      "beh.no_beacon",
+      "beh.uniform_cadence"
+     ],
+     "target": "/sitemap.xml",
+     "verdict": "automation"
+    }
+   ],
+   "verdict": "automation"
+  },
+  "human": {
+   "action": "allow",
+   "agency": 0.0,
+   "automation": 0.0,
+   "hostility": 0.0,
+   "label": "A person in a browser",
+   "note": "Loads a page, its stylesheet fires, JavaScript runs the beacon, then pauses to read.",
+   "requests": 7,
+   "scenario": "human",
+   "signals": [],
+   "timeline": [
+    {
+     "agency": 0.0,
+     "at": 0.0,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/",
+     "verdict": "unknown"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.3,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/assets/site.css",
+     "verdict": "unknown"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.5,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/px/cd5c9a2dc2f8.gif",
+     "verdict": "human"
+    },
+    {
+     "agency": 0.0,
+     "at": 9.4,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/about",
+     "verdict": "human"
+    },
+    {
+     "agency": 0.0,
+     "at": 9.6,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/assets/site.css",
+     "verdict": "human"
+    },
+    {
+     "agency": 0.0,
+     "at": 9.8,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/px/cd5c9a2dc2f8.gif",
+     "verdict": "human"
+    },
+    {
+     "agency": 0.0,
+     "at": 26.1,
+     "automation": 0.0,
+     "method": "GET",
+     "new_signals": [],
+     "target": "/contact",
+     "verdict": "human"
+    }
+   ],
+   "verdict": "human"
+  },
+  "scanner": {
+   "action": "tarpit",
+   "agency": 0.0,
+   "automation": 95.2,
+   "hostility": 82.9,
+   "label": "A hostile scanner",
+   "note": "Hunts for secrets and admin panels, probes for injection. Fast and mechanical.",
+   "requests": 8,
+   "scenario": "scanner",
+   "signals": [
+    {
+     "agency": 0.4,
+     "category": "behavior",
+     "description": "Inter-request timing is unnaturally regular.",
+     "detail": "cv=0.000 over 5 intervals",
+     "hostility": 0.0,
+     "id": "beh.uniform_cadence",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.4,
+     "category": "identity",
+     "description": "User-Agent is a raw HTTP client library rather than a browser.",
+     "detail": "UA is HTTP client 'python-requests'",
+     "hostility": 0.05,
+     "id": "id.http_library",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.35,
+     "category": "behavior",
+     "description": "Sustained request rate above what a person can generate.",
+     "detail": "9.1 req/s sustained",
+     "hostility": 0.1,
+     "id": "beh.superhuman_rate",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.25,
+     "category": "behavior",
+     "description": "Pages were fetched but the in-page JavaScript beacon never fired, so nothing executed the document.",
+     "detail": "2 documents, beacon never fired",
+     "hostility": 0.0,
+     "id": "beh.no_beacon",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.25,
+     "category": "intent",
+     "description": "Requested well-known secret locations (.env, .git/config, id_rsa).",
+     "detail": "requested secret location '/.env'",
+     "hostility": 0.75,
+     "id": "int.secret_hunting",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.23,
+     "category": "behavior",
+     "description": "Fetched several HTML documents and zero CSS, images or fonts.",
+     "detail": "3 documents, 0 assets",
+     "hostility": 0.0,
+     "id": "beh.no_assets",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.15,
+     "category": "intent",
+     "description": "Enumerated administrative or infrastructure endpoints.",
+     "detail": "admin surface '/admin'",
+     "hostility": 0.4,
+     "id": "int.admin_probe",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.15,
+     "category": "intent",
+     "description": "SQL, template, command or XSS injection pattern in input.",
+     "detail": "injection pattern 'OR 1=1'",
+     "hostility": 0.78,
+     "id": "int.injection_probe",
+     "proves_llm": false
+    },
+    {
+     "agency": 0.15,
+     "category": "intent",
+     "description": "Path traversal sequence in the request target.",
+     "detail": "traversal token '../'",
+     "hostility": 0.8,
+     "id": "int.path_traversal",
+     "proves_llm": false
+    }
+   ],
+   "timeline": [
+    {
+     "agency": 0.0,
+     "at": 0.0,
+     "automation": 55.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.secret_hunting"
+     ],
+     "target": "/.env",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.11,
+     "automation": 66.3,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.secret_hunting",
+      "beh.no_beacon"
+     ],
+     "target": "/.git/config",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.22,
+     "automation": 75.3,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.admin_probe",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/admin",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.33,
+     "automation": 79.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/wp-login.php",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.44,
+     "automation": 84.0,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.injection_probe",
+      "beh.no_assets",
+      "beh.no_beacon"
+     ],
+     "target": "/api/v1/users?id=1%20OR%201=1",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.55,
+     "automation": 94.5,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.path_traversal",
+      "beh.no_assets",
+      "beh.no_beacon",
+      "beh.uniform_cadence",
+      "beh.superhuman_rate"
+     ],
+     "target": "/../../etc/passwd",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.66,
+     "automation": 94.5,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.admin_probe",
+      "beh.no_assets",
+      "beh.no_beacon",
+      "beh.uniform_cadence",
+      "beh.superhuman_rate"
+     ],
+     "target": "/actuator/env",
+     "verdict": "automation"
+    },
+    {
+     "agency": 0.0,
+     "at": 0.77,
+     "automation": 95.2,
+     "method": "GET",
+     "new_signals": [
+      "id.http_library",
+      "int.secret_hunting",
+      "beh.no_assets",
+      "beh.no_beacon",
+      "beh.uniform_cadence",
+      "beh.superhuman_rate"
+     ],
+     "target": "/.aws/credentials",
+     "verdict": "automation"
+    }
+   ],
+   "verdict": "automation"
+  }
+ }
+}

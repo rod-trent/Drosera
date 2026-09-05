@@ -371,10 +371,24 @@ async function post(body){
   return r.json();
 }
 
+// The four scenarios are deterministic, so they are precomputed at build time
+// and served as a static file. Clicking tabs therefore costs no serverless
+// invocations, which keeps the demo standing when a link does well. The API
+// remains the fallback, and still does all live and custom scoring.
+let precomputed = null;
+const precomputedReady = fetch("/scenarios.json")
+  .then(r => (r.ok ? r.json() : null))
+  .then(d => { precomputed = d && d.scenarios; })
+  .catch(() => { precomputed = null; });
+
 async function load(key){
   resEl.innerHTML = `<p class="empty"><span class="spin"></span> Scoring…</p>`;
-  try { render(resEl, await post({ mode: "scenario", scenario: key })); }
-  catch (e) {
+  try {
+    await precomputedReady;
+    const data = (precomputed && precomputed[key])
+      || await post({ mode: "scenario", scenario: key });
+    render(resEl, data);
+  } catch (e) {
     resEl.innerHTML = `<p class="empty">Could not reach the scoring endpoint (${esc(e.message)}).
       The scenarios are also available offline by running <code>drosera demo</code>.</p>`;
   }
