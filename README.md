@@ -8,8 +8,9 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <a href="https://pypi.org/project/drosera/"><img alt="PyPI" src="https://img.shields.io/pypi/v/drosera.svg?color=6D4AFF"></a>
+  <a href="https://github.com/rod-trent/Drosera/blob/main/LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+  <img alt="Python versions" src="https://img.shields.io/pypi/pyversions/drosera.svg">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-none-brightgreen.svg">
   <a href="https://github.com/rod-trent/Drosera/actions"><img alt="CI" src="https://github.com/rod-trent/Drosera/actions/workflows/ci.yml/badge.svg"></a>
 </p>
