@@ -21,10 +21,31 @@ python web/dev.py          # http://127.0.0.1:3000
 ## Deploy to Vercel
 
 1. **New Project** → import `rod-trent/Drosera`.
-2. Set **Root Directory** to `web`.
-3. Framework preset: **Other**. No build command, no output directory —
-   `index.html` is static and `api/assess.py` is picked up automatically.
+2. Set **Root Directory** to `web`. This matters: it makes `web/` the project
+   root, so the library source, tests and CI config are never uploaded.
+3. Framework preset: **Other**. No build command, no output directory.
 4. Deploy.
+
+### Why this layout works
+
+- `api/assess.py` defines a top-level `handler` subclassing
+  `BaseHTTPRequestHandler`, which is one of the handler shapes Vercel's Python
+  runtime accepts, and file-based routing maps it to `/api/assess`.
+- `requirements.txt` names no web framework, so Vercel does **not** apply a
+  framework preset. That is deliberate — a preset would route every request
+  through the Python function, and `index.html` would stop being a static CDN
+  asset.
+- `.python-version` pins 3.12 rather than inheriting whatever the platform
+  default becomes. The package needs 3.11 or newer.
+- `vercel.json` sets `excludeFiles` because Python bundles otherwise include
+  every file reachable at build time; the local dev server and bytecode caches
+  do not belong in a deployed function.
+
+### If the deploy fails
+
+The likeliest cause is `requirements.txt`: it installs the engine from GitHub
+over `git+https`, which needs git available in the build image. If that fails,
+publish to PyPI first and pin `drosera==0.1.0` instead.
 
 `requirements.txt` currently installs the engine from the GitHub repo. Once
 `drosera` is on PyPI, pin it instead so a deploy cannot drift with `main`:
