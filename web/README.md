@@ -2,6 +2,8 @@
 
 A live demonstration of the detection engine, deployable to Vercel.
 
+**Live at <https://web-phi-snowy-61.vercel.app>**
+
 It runs the **real** `drosera` package server-side rather than reimplementing
 scoring in JavaScript. A browser-side copy would drift from the library within a
 release or two, and a demo that misreports the detection is worse than no demo.

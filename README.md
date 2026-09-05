@@ -12,6 +12,11 @@
   <a href="https://github.com/rod-trent/Drosera/actions"><img alt="CI" src="https://github.com/rod-trent/Drosera/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
+<p align="center">
+  <strong><a href="https://web-phi-snowy-61.vercel.app">&#9654; Try it live</a></strong><br>
+  <sub>Watch a crawler score <b>0.0</b> on the LLM axis and an agent score <b>100</b> &mdash; running the real engine.</sub>
+</p>
+
 ---
 
 The sundew doesn't chase gnats. It grows droplets that look exactly like
@@ -78,7 +83,7 @@ exfiltration rather than an inference.
 pip install drosera
 ```
 
-See it work, with no server and no network:
+See it work — [in your browser](https://web-phi-snowy-61.vercel.app), or with no server and no network:
 
 ```bash
 drosera demo
@@ -251,6 +256,7 @@ parts of it are enforced in code.
 
 | | |
 | --- | --- |
+| [**Live playground**](https://web-phi-snowy-61.vercel.app) | Score four request traces, or your own browser |
 | [Architecture](https://github.com/rod-trent/Drosera/blob/main/docs/architecture.md) | How the pieces fit and why |
 | [Detection signals](https://github.com/rod-trent/Drosera/blob/main/docs/detection-signals.md) | Every signal and its weight |
 | [Deployment](https://github.com/rod-trent/Drosera/blob/main/docs/deployment.md) | Replay, standalone, middleware; tuning and cost control |
