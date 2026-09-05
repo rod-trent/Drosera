@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/rod-trent/Drosera/main/assets/icon-128.png" width="88" height="88" alt=""></p>
+
 <h1 align="center">Drosera</h1>
 
 <p align="center">
