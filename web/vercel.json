@@ -18,7 +18,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+          "value": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' /_vercel/insights/; connect-src 'self' https://va.vercel-scripts.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         }
       ]
     },
