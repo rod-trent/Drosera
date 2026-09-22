@@ -132,6 +132,20 @@ pre.install{background:var(--panel);border:1px solid var(--line);border-radius:8
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1.1rem}
 .card h3{font-size:1rem;margin:0 0 .4rem}
 .card p{margin:0;color:var(--muted);font-size:.9rem}
+.new{display:inline-block;font-family:var(--mono);font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.07em;padding:.2rem .5rem;border-radius:4px;background:var(--accent-soft);
+  color:var(--accent);font-weight:600;vertical-align:.3em;margin-left:.5rem}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .5rem;margin:0 0 1.5rem;
+  font-family:var(--mono);font-size:.78rem}
+.flow span{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:.3rem .6rem}
+.flow b{color:var(--muted);font-weight:400}
+.comment{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.25rem;
+  font-size:.9rem;line-height:1.55}
+.comment .who{font-size:.78rem;color:var(--muted);margin:0 0 .6rem}
+.comment p{margin:0 0 .5rem}
+.comment p:last-child{margin:0}
+.comment code{font-size:.82rem;overflow-wrap:anywhere}
+.caption{color:var(--muted);font-size:.85rem;margin:.6rem 0 0}
 footer{padding:2.5rem 0 4rem;color:var(--muted);font-size:.9rem}
 footer a{margin-right:1.25rem}
 .spin{display:inline-block;width:.85em;height:.85em;border:2px solid currentColor;
@@ -247,6 +261,85 @@ Human visitors do not need to do anything; this notice is not shown to you.</div
   </div>
 </section>
 
+<section id="soc">
+  <div class="wrap">
+    <h2>From honeypot to SOC <span class="new">New in 0.2</span></h2>
+    <p class="sub">Evidence is only useful where people already work. Drosera now
+      ships its verdicts to Microsoft Sentinel, correlates them with Defender, and
+      reports on them. It does this without adding a single dependency or changing
+      anything the honeypot does.</p>
+
+    <div class="flow" aria-label="Data flow">
+      <span>Drosera</span><b>→</b><span>Logs Ingestion API</span><b>→</b>
+      <span>DroseraEvents_CL</span><b>→</b><span>rules · workbook · playbooks</span><b>→</b>
+      <span>Defender XDR</span>
+    </div>
+
+    <div class="cols" style="margin-top:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))">
+      <div class="card">
+        <h3>Microsoft Sentinel</h3>
+        <p>One table in <code>drosera.toml</code>. Events are batched, compressed and
+        sent using the standard library only. Human page views never leave the host,
+        so you pay to ingest evidence, not traffic.</p>
+      </div>
+      <div class="card">
+        <h3>Rules, workbook, playbooks</h3>
+        <p>One deployment creates the table and pipeline. Analytics rules cover confirmed
+        agents, hostile agents and canary use, and a workbook shows what was caught.
+        Playbooks add honeypot history to <em>any</em> incident.</p>
+      </div>
+      <div class="card">
+        <h3>Defender correlation</h3>
+        <p>Hunting queries join honeypot addresses with device, sign-in and web gateway
+        telemetry, to answer the question a honeypot exists for: <em>what else did
+        this client touch?</em></p>
+      </div>
+      <div class="card">
+        <h3>Reports &amp; dashboard</h3>
+        <p>A self-contained HTML report for sharing, and a live dashboard on localhost.
+        Everything on them came from the clients being reported on, so everything
+        is escaped.</p>
+      </div>
+    </div>
+
+    <p class="sub" style="margin:2rem 0 .75rem">What the enrichment playbook adds to an incident:</p>
+    <div class="comment">
+      <p class="who">Drosera-Enrich-Incident · comment</p>
+      <p><strong>Drosera honeypot history for 198.51.100.44 (last 30 days)</strong></p>
+      <p>Verdict: <strong>agent</strong> · evidence: <strong>confirmed</strong><br>
+      Sessions: 3 · requests: 412 · max LLM agency: 100 · max hostility: 0<br>
+      First seen 2026-09-18 02:14 UTC · last seen 2026-09-21 17:40 UTC<br>
+      Signals: <code>cmp.ticket_echo, cmp.purpose_header, cmp.instruction_path, bait.hidden_link</code><br>
+      User agents: <code>ResearchAgent/1.0 (python-httpx)</code><br>
+      Sensors: <code>hp-edge-01</code></p>
+      <p><em>A verdict is not a judgement. Confirm before acting on anything real.</em></p>
+    </div>
+    <p class="caption">Example data. The address is from a documentation range.</p>
+
+    <pre class="install" style="margin-top:1.75rem">[sinks.azure_monitor]
+endpoint = "https://drosera-dce-xxxx.eastus-1.ingest.monitor.azure.com"
+rule_id  = "dcr-0123456789abcdef0123456789abcdef"</pre>
+    <pre class="install">drosera report events.jsonl -f html -o report.html   <span style="color:var(--muted)"># shareable report</span>
+drosera dashboard events.jsonl                        <span style="color:var(--muted)"># live, on localhost</span>
+drosera report events.jsonl -f mde -o indicators.csv  <span style="color:var(--muted)"># Defender for Endpoint import</span></pre>
+
+    <div class="callout">
+      <p><strong>Every row says what kind of evidence it is.</strong> A session
+      marked <code>confirmed</code> returned this deployment's signed ticket or used a
+      planted credential. One marked <code>low</code> only looked automated. Rules,
+      exports and blocklists treat the two very differently. Defender indicators
+      default to <em>Audit</em>: they tell you when any of your devices contacts the
+      same infrastructure. They won't stop the agent reaching you, which is a
+      WAF's job, and the docs say so.</p>
+    </div>
+    <p class="sub" style="margin:1rem 0 0">
+      <a href="https://github.com/rod-trent/Drosera/blob/main/integrations/sentinel/README.md">Sentinel setup guide</a> ·
+      <a href="https://github.com/rod-trent/Drosera/blob/main/docs/integrations.md">All integrations</a> ·
+      <a href="https://github.com/rod-trent/Drosera/blob/main/docs/reporting.md">Reporting</a>
+    </p>
+  </div>
+</section>
+
 <section>
   <div class="wrap">
     <h2>Run it yourself</h2>
@@ -272,6 +365,7 @@ app = DroseraMiddleware(app)</pre>
     <a href="https://github.com/rod-trent/Drosera/blob/main/docs/ethics.md">Ethics &amp; scope</a>
     <a href="https://github.com/rod-trent/Drosera/blob/main/docs/detection-signals.md">Signals</a>
     <a href="https://github.com/rod-trent/Drosera/blob/main/docs/deployment.md">Deployment</a>
+    <a href="https://github.com/rod-trent/Drosera/blob/main/docs/integrations.md">Sentinel &amp; Defender</a>
     <p style="margin-top:1.25rem">Apache-2.0. This page runs the detection engine only —
     no tarpit, because serving an endless maze from a per-second billing model would
     invert the economics the trap depends on.</p>
