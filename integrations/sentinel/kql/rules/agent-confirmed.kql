@@ -1,0 +1,24 @@
+// An LLM-driven client read the honeypot's plain-English notice and acted on it:
+// it returned this deployment's signed ticket, sent the requested purpose header,
+// or followed the prose instruction. Hostile agents have their own rule.
+DroseraEvents_CL
+| where EventType == "request"
+| where Verdict in ("agent", "hostile_agent") and Confidence in ("confirmed", "high")
+| mv-expand Signal = SignalIds to typeof(string)
+| summarize
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    Sessions = dcount(SessionId),
+    MaxAgency = max(Agency),
+    TokensBurned = max(TokensBurned),
+    Signals = make_set(Signal, 50),
+    UserAgents = make_set(HttpUserAgent, 10),
+    Sensors = make_set(Sensor, 10),
+    HostileEvents = countif(Verdict == "hostile_agent")
+    by SrcIpAddr
+| where HostileEvents == 0
+| extend
+    SignalList = strcat_array(Signals, ", "),
+    UserAgent = tostring(UserAgents[0]),
+    Sensor = tostring(Sensors[0])
+| project StartTime, EndTime, SrcIpAddr, Sensor, UserAgent, Sessions, MaxAgency, TokensBurned, SignalList

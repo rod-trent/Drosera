@@ -204,12 +204,36 @@ Export it where it's useful:
 drosera report events.jsonl -f csv  -o sessions.csv
 drosera report events.jsonl -f ioc  --min-confidence high
 drosera report events.jsonl -f stix -o bundle.json
+drosera report events.jsonl -f mde  -o indicators.csv   # Defender for Endpoint import
+drosera report events.jsonl -f html -o report.html      # self-contained report page
+drosera dashboard events.jsonl                          # the same, live, on localhost
 ```
 
 Every row carries a **confidence class** derived from evidence type rather than
 score — `confirmed` (returned our ticket, or used a planted credential) through
 `low` (behaviour only) — because a blocklist should treat those very
 differently.
+
+## Microsoft Sentinel and Defender
+
+Drosera can send its evidence straight into Microsoft Sentinel, with no extra
+dependencies:
+
+```toml
+[sinks.azure_monitor]
+endpoint = "https://drosera-dce-xxxx.eastus-1.ingest.monitor.azure.com"
+rule_id  = "dcr-0123456789abcdef0123456789abcdef"
+```
+
+The [Sentinel pack](https://github.com/rod-trent/Drosera/blob/main/integrations/sentinel/README.md) deploys the table and
+ingestion pipeline in one step. It adds analytics rules for confirmed agents,
+hostile agents and canary use, a workbook, and playbooks that enrich any incident
+with an address's honeypot history or submit it to Defender for Endpoint. Hunting
+queries join Drosera with Defender XDR device, sign-in and web telemetry, which
+answers the question a honeypot is for: *what else did this client touch?*
+
+Other destinations plug in the same way. See
+[integrations](https://github.com/rod-trent/Drosera/blob/main/docs/integrations.md).
 
 ## Where the line is
 
@@ -263,6 +287,8 @@ parts of it are enforced in code.
 | [Architecture](https://github.com/rod-trent/Drosera/blob/main/docs/architecture.md) | How the pieces fit and why |
 | [Detection signals](https://github.com/rod-trent/Drosera/blob/main/docs/detection-signals.md) | Every signal and its weight |
 | [Deployment](https://github.com/rod-trent/Drosera/blob/main/docs/deployment.md) | Replay, standalone, middleware; tuning and cost control |
+| [Reporting](https://github.com/rod-trent/Drosera/blob/main/docs/reporting.md) | HTML report, live dashboard, export formats |
+| [Integrations](https://github.com/rod-trent/Drosera/blob/main/docs/integrations.md) | Sentinel, Defender, STIX, webhooks, writing a plug-in sink |
 | [Ethics](https://github.com/rod-trent/Drosera/blob/main/docs/ethics.md) | The boundary, and how it's enforced |
 
 ## Commands
@@ -271,10 +297,12 @@ parts of it are enforced in code.
 drosera serve      run the standalone honeypot site
 drosera demo       synthetic clients through the engine
 drosera replay     score an existing access log, no server
-drosera report     summarize captures (summary/csv/json/ioc/stix)
+drosera report     summarize captures (summary/csv/json/ioc/stix/mde/html)
 drosera signals    the signal catalogue and weights
 drosera canary     mint, plant, watch and scan canary credentials
 drosera init       write a commented drosera.toml
+drosera dashboard  live HTML report of captured events, on localhost
+drosera ship       backfill events to plug-in sinks (e.g. Sentinel)
 drosera doctor     check a deployment for common mistakes
 ```
 

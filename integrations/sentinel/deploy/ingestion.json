@@ -1,0 +1,371 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Drosera -> Microsoft Sentinel ingestion: the DroseraEvents_CL table, a data collection endpoint and rule for the Logs Ingestion API, an optional Monitoring Metrics Publisher assignment for the sender, and the DroseraSessions and DroseraCanaryHits parser functions. Deploy into the workspace's resource group.",
+    "generator": "integrations/sentinel/_build.py -- do not edit by hand"
+  },
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Existing Log Analytics workspace with Microsoft Sentinel enabled."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Must be the workspace's region."
+      }
+    },
+    "dceName": {
+      "type": "string",
+      "defaultValue": "drosera-dce"
+    },
+    "dcrName": {
+      "type": "string",
+      "defaultValue": "drosera-dcr"
+    },
+    "principalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Object id of the app registration's service principal, or of the managed identity, that will send events. Leave empty to assign the role yourself."
+      }
+    },
+    "principalType": {
+      "type": "string",
+      "defaultValue": "ServicePrincipal",
+      "allowedValues": [
+        "ServicePrincipal",
+        "User",
+        "Group"
+      ]
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2022-10-01",
+      "name": "[concat(parameters('workspaceName'), '/DroseraEvents_CL')]",
+      "properties": {
+        "plan": "Analytics",
+        "schema": {
+          "name": "DroseraEvents_CL",
+          "description": "Drosera honeypot events: one row per request or canary hit.",
+          "columns": [
+            {
+              "name": "TimeGenerated",
+              "type": "dateTime"
+            },
+            {
+              "name": "EventType",
+              "type": "string"
+            },
+            {
+              "name": "Sensor",
+              "type": "string"
+            },
+            {
+              "name": "SessionId",
+              "type": "string"
+            },
+            {
+              "name": "Fingerprint",
+              "type": "string"
+            },
+            {
+              "name": "SrcIpAddr",
+              "type": "string"
+            },
+            {
+              "name": "HttpMethod",
+              "type": "string"
+            },
+            {
+              "name": "UrlPath",
+              "type": "string"
+            },
+            {
+              "name": "HttpUserAgent",
+              "type": "string"
+            },
+            {
+              "name": "Verdict",
+              "type": "string"
+            },
+            {
+              "name": "Confidence",
+              "type": "string"
+            },
+            {
+              "name": "Action",
+              "type": "string"
+            },
+            {
+              "name": "Agency",
+              "type": "real"
+            },
+            {
+              "name": "Automation",
+              "type": "real"
+            },
+            {
+              "name": "Hostility",
+              "type": "real"
+            },
+            {
+              "name": "Hits",
+              "type": "int"
+            },
+            {
+              "name": "TokensBurned",
+              "type": "long"
+            },
+            {
+              "name": "SignalIds",
+              "type": "dynamic"
+            },
+            {
+              "name": "Signals",
+              "type": "dynamic"
+            },
+            {
+              "name": "CanaryId",
+              "type": "string"
+            },
+            {
+              "name": "CanaryKind",
+              "type": "string"
+            },
+            {
+              "name": "CanaryChannel",
+              "type": "string"
+            },
+            {
+              "name": "Detail",
+              "type": "string"
+            },
+            {
+              "name": "FilePath",
+              "type": "string"
+            },
+            {
+              "name": "DroseraVersion",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionEndpoints",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dceName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "networkAcls": {
+          "publicNetworkAccess": "Enabled"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dcrName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dceName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'DroseraEvents_CL')]"
+      ],
+      "properties": {
+        "description": "Drosera events via the Logs Ingestion API.",
+        "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dceName'))]",
+        "streamDeclarations": {
+          "Custom-DroseraEvents": {
+            "columns": [
+              {
+                "name": "TimeGenerated",
+                "type": "datetime"
+              },
+              {
+                "name": "EventType",
+                "type": "string"
+              },
+              {
+                "name": "Sensor",
+                "type": "string"
+              },
+              {
+                "name": "SessionId",
+                "type": "string"
+              },
+              {
+                "name": "Fingerprint",
+                "type": "string"
+              },
+              {
+                "name": "SrcIpAddr",
+                "type": "string"
+              },
+              {
+                "name": "HttpMethod",
+                "type": "string"
+              },
+              {
+                "name": "UrlPath",
+                "type": "string"
+              },
+              {
+                "name": "HttpUserAgent",
+                "type": "string"
+              },
+              {
+                "name": "Verdict",
+                "type": "string"
+              },
+              {
+                "name": "Confidence",
+                "type": "string"
+              },
+              {
+                "name": "Action",
+                "type": "string"
+              },
+              {
+                "name": "Agency",
+                "type": "real"
+              },
+              {
+                "name": "Automation",
+                "type": "real"
+              },
+              {
+                "name": "Hostility",
+                "type": "real"
+              },
+              {
+                "name": "Hits",
+                "type": "int"
+              },
+              {
+                "name": "TokensBurned",
+                "type": "long"
+              },
+              {
+                "name": "SignalIds",
+                "type": "dynamic"
+              },
+              {
+                "name": "Signals",
+                "type": "dynamic"
+              },
+              {
+                "name": "CanaryId",
+                "type": "string"
+              },
+              {
+                "name": "CanaryKind",
+                "type": "string"
+              },
+              {
+                "name": "CanaryChannel",
+                "type": "string"
+              },
+              {
+                "name": "Detail",
+                "type": "string"
+              },
+              {
+                "name": "FilePath",
+                "type": "string"
+              },
+              {
+                "name": "DroseraVersion",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "sentinel"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Custom-DroseraEvents"
+            ],
+            "destinations": [
+              "sentinel"
+            ],
+            "transformKql": "source",
+            "outputStream": "Custom-DroseraEvents_CL"
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[not(empty(parameters('principalId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Insights/dataCollectionRules/{0}', parameters('dcrName'))]",
+      "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName')), parameters('principalId'), '3913510d-42f4-4e42-8a64-420c390055eb')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')]",
+        "principalId": "[parameters('principalId')]",
+        "principalType": "[parameters('principalType')]"
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+      "apiVersion": "2020-08-01",
+      "name": "[concat(parameters('workspaceName'), '/drosera-sessions')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'DroseraEvents_CL')]"
+      ],
+      "properties": {
+        "category": "Drosera",
+        "displayName": "DroseraSessions",
+        "functionAlias": "DroseraSessions",
+        "query": "// DroseraSessions: one row per honeypot session -- the same rollup `drosera report` does.\n// Verdict is the highest rung the session reached; Confidence is the strongest *kind* of\n// evidence it produced (confirmed > high > medium > low), not a score.\nlet requests = DroseraEvents_CL\n    | where EventType == \"request\";\nlet signals = requests\n    | mv-expand Signal = SignalIds to typeof(string)\n    | where isnotempty(Signal)\n    | summarize Signals = make_set(Signal, 100) by SessionId, Sensor;\nrequests\n| summarize\n    FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated),\n    Requests = count(),\n    DistinctPaths = dcount(UrlPath),\n    Agency = max(Agency),\n    Automation = max(Automation),\n    Hostility = max(Hostility),\n    TokensBurned = max(TokensBurned),\n    VerdictRank = max(case(Verdict == \"hostile_agent\", 4, Verdict == \"agent\", 3, Verdict == \"automation\", 2, Verdict == \"unknown\", 1, 0)),\n    ConfidenceRank = max(case(Confidence == \"confirmed\", 3, Confidence == \"high\", 2, Confidence == \"medium\", 1, 0)),\n    SrcIpAddr = take_any(SrcIpAddr),\n    HttpUserAgent = take_any(HttpUserAgent),\n    Fingerprint = take_any(Fingerprint)\n    by SessionId, Sensor\n| join kind=leftouter signals on SessionId, Sensor\n| project-away SessionId1, Sensor1\n| extend\n    Verdict = tostring(dynamic([\"human\", \"unknown\", \"automation\", \"agent\", \"hostile_agent\"])[VerdictRank]),\n    Confidence = tostring(dynamic([\"low\", \"medium\", \"high\", \"confirmed\"])[ConfidenceRank])\n| project-away VerdictRank, ConfidenceRank\n"
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+      "apiVersion": "2020-08-01",
+      "name": "[concat(parameters('workspaceName'), '/drosera-canary-hits')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'DroseraEvents_CL')]"
+      ],
+      "properties": {
+        "category": "Drosera",
+        "displayName": "DroseraCanaryHits",
+        "functionAlias": "DroseraCanaryHits",
+        "query": "// DroseraCanaryHits: canary events from `drosera canary watch --emit` and `drosera canary scan --emit`.\n// value_seen is proof a planted credential was used. file_read and file_modified are hints:\n// backups, antivirus and indexers touch files too.\nDroseraEvents_CL\n| where EventType == \"canary\"\n| project TimeGenerated, Sensor, CanaryChannel, CanaryKind, CanaryId, FilePath, Detail, Confidence\n"
+      }
+    }
+  ],
+  "outputs": {
+    "endpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dceName')), '2022-06-01').logsIngestion.endpoint]"
+    },
+    "rule_id": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName')), '2022-06-01').immutableId]"
+    },
+    "stream": {
+      "type": "string",
+      "value": "Custom-DroseraEvents"
+    }
+  }
+}

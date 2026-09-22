@@ -1,0 +1,29 @@
+// An address that behaved as an LLM agent, or with high hostility, on the honeypot in the
+// last 7 days is now attempting to sign in to Entra ID. Needs the Entra ID (SigninLogs)
+// data connector. Severity is raised to High when any attempt succeeded.
+let lookback = 7d;
+let honeypot = DroseraEvents_CL
+    | where TimeGenerated > ago(lookback)
+    | where EventType == "request"
+    | where isnotempty(SrcIpAddr) and not(SrcIpAddr startswith "sha256:")
+    | where Verdict in ("agent", "hostile_agent") or Hostility >= 55
+    | summarize
+        HoneypotFirstSeen = min(TimeGenerated),
+        HoneypotLastSeen = max(TimeGenerated),
+        HoneypotVerdicts = make_set(Verdict, 5),
+        HoneypotSessions = dcount(SessionId)
+        by SrcIpAddr;
+SigninLogs
+| where TimeGenerated > ago(1h)
+| join kind=inner honeypot on $left.IPAddress == $right.SrcIpAddr
+| summarize
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    Attempts = count(),
+    Successes = countif(ResultType == "0"),
+    Apps = make_set(AppDisplayName, 10)
+    by UserPrincipalName, IPAddress, HoneypotFirstSeen, HoneypotLastSeen, HoneypotSessions,
+       HoneypotVerdictList = strcat_array(HoneypotVerdicts, ", ")
+| extend AppList = strcat_array(Apps, ", "), Severity = iff(Successes > 0, "High", "Medium")
+| project StartTime, EndTime, UserPrincipalName, IPAddress, Attempts, Successes, AppList,
+    HoneypotVerdictList, HoneypotSessions, HoneypotFirstSeen, HoneypotLastSeen, Severity

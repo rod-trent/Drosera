@@ -1,0 +1,220 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "On a Sentinel incident, submit each IP entity to Microsoft Defender for Endpoint as a custom indicator (Audit by default) and comment on the incident. Network indicators govern connections from your devices: in Audit mode they alert when any managed device contacts the same infrastructure. They do not stop inbound traffic to your site. The playbook identity needs the WindowsDefenderATP Ti.ReadWrite.All application permission and Microsoft Sentinel Responder.",
+    "generator": "integrations/sentinel/_build.py -- do not edit by hand"
+  },
+  "parameters": {
+    "PlaybookName": {
+      "type": "string",
+      "defaultValue": "Drosera-MDE-Indicator"
+    },
+    "IndicatorAction": {
+      "type": "string",
+      "defaultValue": "Audit",
+      "allowedValues": [
+        "Audit",
+        "Warn",
+        "Block"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "defaultValue": "Medium",
+      "allowedValues": [
+        "Informational",
+        "Low",
+        "Medium",
+        "High"
+      ]
+    },
+    "ExpirationDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 1,
+      "maxValue": 365
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+      "location": "[resourceGroup().location]",
+      "kind": "V1",
+      "properties": {
+        "displayName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+        "customParameterValues": {},
+        "parameterValueType": "Alternative",
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('PlaybookName')]",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "hidden-SentinelTemplateName": "Drosera-MDE-Indicator",
+        "hidden-SentinelTemplateVersion": "1.0"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', concat('azuresentinel-', parameters('PlaybookName')))]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "Microsoft_Sentinel_incident": {
+              "type": "ApiConnectionWebhook",
+              "inputs": {
+                "body": {
+                  "callback_url": "@{listCallbackUrl()}"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                  }
+                },
+                "path": "/incident-creation"
+              }
+            }
+          },
+          "actions": {
+            "Entities_-_Get_IPs": {
+              "type": "ApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/entities/ip"
+              }
+            },
+            "For_each_IP": {
+              "type": "Foreach",
+              "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
+              "runAfter": {
+                "Entities_-_Get_IPs": [
+                  "Succeeded"
+                ]
+              },
+              "actions": {
+                "Submit_Defender_indicator": {
+                  "type": "Http",
+                  "runAfter": {},
+                  "inputs": {
+                    "method": "POST",
+                    "uri": "https://api.securitycenter.microsoft.com/api/indicators",
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": {
+                      "indicatorValue": "@{items('For_each_IP')?['Address']}",
+                      "indicatorType": "IpAddress",
+                      "action": "[parameters('IndicatorAction')]",
+                      "severity": "[parameters('Severity')]",
+                      "generateAlert": true,
+                      "title": "Drosera honeypot: @{triggerBody()?['object']?['properties']?['title']}",
+                      "description": "Submitted by the Drosera-MDE-Indicator playbook from Microsoft Sentinel incident @{triggerBody()?['object']?['properties']?['incidentNumber']}. This address interacted with a Drosera honeypot.",
+                      "recommendedActions": "Review which devices contacted this address and why. A honeypot verdict is not a judgement; confirm before blocking anything real.",
+                      "expirationTime": "[concat('@{addDays(utcNow(), ', string(parameters('ExpirationDays')), ')}')]"
+                    },
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://api.securitycenter.microsoft.com"
+                    }
+                  }
+                },
+                "Comment_submitted": {
+                  "type": "ApiConnection",
+                  "runAfter": {
+                    "Submit_Defender_indicator": [
+                      "Succeeded"
+                    ]
+                  },
+                  "inputs": {
+                    "body": {
+                      "incidentArmId": "@triggerBody()?['object']?['id']",
+                      "message": "<p>Drosera: submitted <b>@{items('For_each_IP')?['Address']}</b> to Defender for Endpoint as an IP indicator (action @{body('Submit_Defender_indicator')?['action']}, expires @{body('Submit_Defender_indicator')?['expirationTime']}).</p>"
+                    },
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Comment"
+                  }
+                },
+                "Comment_failed": {
+                  "type": "ApiConnection",
+                  "runAfter": {
+                    "Submit_Defender_indicator": [
+                      "Failed",
+                      "TimedOut"
+                    ]
+                  },
+                  "inputs": {
+                    "body": {
+                      "incidentArmId": "@triggerBody()?['object']?['id']",
+                      "message": "<p>Drosera: could not submit <b>@{items('For_each_IP')?['Address']}</b> to Defender for Endpoint (HTTP @{outputs('Submit_Defender_indicator')?['statusCode']}). Check that the playbook identity holds the Ti.ReadWrite.All application permission.</p>"
+                    },
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Comment"
+                  }
+                }
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "azuresentinel": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', concat('azuresentinel-', parameters('PlaybookName')))]",
+                "connectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]",
+                "connectionProperties": {
+                  "authentication": {
+                    "type": "ManagedServiceIdentity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]"
+    }
+  }
+}

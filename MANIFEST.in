@@ -4,5 +4,6 @@ include CHANGELOG.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md
 recursive-include tests *.py
 recursive-include docs *.md *.py
 recursive-include examples *.py *.md
+recursive-include integrations *.py *.md *.json *.kql
 prune .github
 global-exclude __pycache__ *.py[cod] .DS_Store

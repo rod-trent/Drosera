@@ -1,0 +1,248 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Drosera workbook for Microsoft Sentinel. Deploy after ingestion.json.",
+    "generator": "integrations/sentinel/_build.py -- do not edit by hand"
+  },
+  "parameters": {
+    "workspaceName": {
+      "type": "string"
+    },
+    "workbookName": {
+      "type": "string",
+      "defaultValue": "Drosera honeypot"
+    }
+  },
+  "variables": {
+    "workbookContent": {
+      "version": "Notebook/1.0",
+      "items": [
+        {
+          "type": 1,
+          "name": "header",
+          "content": {
+            "json": "## Drosera honeypot\nSessions and canary hits from Drosera sensors. **Confidence** is the *kind* of evidence, not a score: *confirmed* means the client returned this deployment's signed ticket or used a planted credential; *low* is traffic shape alone. A verdict is not a judgement -- confirm before acting on anything real."
+          }
+        },
+        {
+          "type": 9,
+          "name": "parameters",
+          "content": {
+            "version": "KqlParameterItem/1.0",
+            "style": "pills",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "parameters": [
+              {
+                "id": "3fa91340-0f8c-5f20-9878-2b6afbe64112",
+                "version": "KqlParameterItem/1.0",
+                "name": "TimeRange",
+                "label": "Time range",
+                "type": 4,
+                "isRequired": true,
+                "value": {
+                  "durationMs": 604800000
+                },
+                "typeSettings": {
+                  "allowCustom": true,
+                  "selectableValues": [
+                    {
+                      "durationMs": 3600000
+                    },
+                    {
+                      "durationMs": 86400000
+                    },
+                    {
+                      "durationMs": 604800000
+                    },
+                    {
+                      "durationMs": 2592000000
+                    },
+                    {
+                      "durationMs": 7776000000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "6b67a495-d442-5333-912b-13aff5414b8e",
+                "version": "KqlParameterItem/1.0",
+                "name": "Sensor",
+                "label": "Sensor",
+                "type": 2,
+                "multiSelect": true,
+                "quote": "'",
+                "delimiter": ",",
+                "query": "DroseraEvents_CL | distinct Sensor | order by Sensor asc",
+                "value": [
+                  "value::all"
+                ],
+                "typeSettings": {
+                  "additionalResourceOptions": [
+                    "value::all"
+                  ],
+                  "selectAllValue": "*",
+                  "showDefault": false
+                },
+                "timeContext": {
+                  "durationMs": 2592000000
+                },
+                "queryType": 0,
+                "resourceType": "microsoft.operationalinsights/workspaces"
+              }
+            ]
+          }
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "let e = DroseraEvents_CL\n| where '*' in ({Sensor}) or Sensor in ({Sensor});\nlet r = e | where EventType == \"request\";\nunion\n    (r | summarize Value = dcount(SessionId) | extend Metric = \"Sessions\", Order = 1),\n    (r | where Verdict in (\"agent\", \"hostile_agent\") | summarize Value = dcount(SessionId) | extend Metric = \"LLM agent sessions\", Order = 2),\n    (r | where Confidence == \"confirmed\" | summarize Value = dcount(SessionId) | extend Metric = \"Confirmed\", Order = 3),\n    (r | where Verdict == \"hostile_agent\" | summarize Value = dcount(SessionId) | extend Metric = \"Hostile agents\", Order = 4),\n    (r | summarize Value = dcount(SrcIpAddr) | extend Metric = \"Source addresses\", Order = 5),\n    (r | summarize t = max(TokensBurned) by SessionId | summarize Value = sum(t) | extend Metric = \"Tokens burned\", Order = 6),\n    (e | where EventType == \"canary\" | summarize Value = count() | extend Metric = \"Canary hits\", Order = 7)\n| order by Order asc\n| project Metric, Value",
+            "size": 4,
+            "title": "",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "tiles",
+            "tileSettings": {
+              "titleContent": {
+                "columnMatch": "Metric",
+                "formatter": 1
+              },
+              "leftContent": {
+                "columnMatch": "Value",
+                "formatter": 12,
+                "formatOptions": {
+                  "palette": "none"
+                },
+                "numberFormat": {
+                  "unit": 17,
+                  "options": {
+                    "style": "decimal",
+                    "maximumFractionDigits": 0
+                  }
+                }
+              },
+              "showBorder": true
+            }
+          },
+          "name": "tiles"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "DroseraEvents_CL\n| where '*' in ({Sensor}) or Sensor in ({Sensor})\n| where EventType == \"request\" and Verdict in (\"automation\", \"agent\", \"hostile_agent\")\n| summarize Sessions = dcount(SessionId) by Verdict, bin(TimeGenerated, {TimeRange:grain})",
+            "size": 0,
+            "title": "New non-human sessions by verdict",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "timechart"
+          },
+          "name": "timeline"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "DroseraSessions\n| where '*' in ({Sensor}) or Sensor in ({Sensor})\n| summarize Sessions = count() by Verdict\n| order by Sessions desc",
+            "size": 0,
+            "title": "Sessions by verdict",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "piechart"
+          },
+          "name": "verdicts",
+          "customWidth": "40"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "DroseraEvents_CL\n| where '*' in ({Sensor}) or Sensor in ({Sensor})\n| where EventType == \"request\" and Verdict != \"human\"\n| mv-expand Signal = SignalIds to typeof(string)\n| summarize Sessions = dcount(SessionId) by Signal\n| top 15 by Sessions",
+            "size": 0,
+            "title": "Top signals (non-human sessions)",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "barchart"
+          },
+          "name": "signals",
+          "customWidth": "60"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "DroseraSessions\n| where '*' in ({Sensor}) or Sensor in ({Sensor})\n| where Verdict !in (\"human\", \"unknown\")\n| extend Rank = case(Confidence == \"confirmed\", 3, Confidence == \"high\", 2, Confidence == \"medium\", 1, 0)\n| extend Country = tostring(geo_info_from_ip_address(SrcIpAddr).country)\n| order by Rank desc, Agency desc, Requests desc\n| project Confidence, Verdict, SrcIpAddr, Country, HttpUserAgent, Requests, Agency = round(Agency, 0),\n    Hostility = round(Hostility, 0), TokensBurned, FirstSeen, LastSeen, Signals = strcat_array(Signals, \" \"), Sensor\n| take 500",
+            "size": 0,
+            "title": "Sessions, strongest evidence first",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "table",
+            "gridSettings": {
+              "filter": true,
+              "sortBy": []
+            }
+          },
+          "name": "sessions"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "DroseraEvents_CL\n| where '*' in ({Sensor}) or Sensor in ({Sensor})\n| where EventType == \"request\" and Verdict in (\"agent\", \"hostile_agent\")\n| summarize Sessions = dcount(SessionId), Addresses = dcount(SrcIpAddr), FirstSeen = min(TimeGenerated),\n    LastSeen = max(TimeGenerated) by HttpUserAgent\n| order by Sessions desc\n| take 25",
+            "size": 0,
+            "title": "LLM agent user agents",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "table"
+          },
+          "name": "agents",
+          "customWidth": "50"
+        },
+        {
+          "type": 3,
+          "content": {
+            "version": "KqlItem/1.0",
+            "query": "DroseraCanaryHits\n| where '*' in ({Sensor}) or Sensor in ({Sensor})\n| order by TimeGenerated desc\n| take 200",
+            "size": 0,
+            "title": "Canary hits",
+            "timeContextFromParameter": "TimeRange",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces",
+            "visualization": "table",
+            "noDataMessage": "No canary hits. Run drosera canary watch --emit to send them here."
+          },
+          "name": "canaries",
+          "customWidth": "50"
+        }
+      ],
+      "fallbackResourceIds": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+      ],
+      "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/workbooks",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, '8b291832-0ee7-5b56-b5bc-9d9805c69571')]",
+      "location": "[resourceGroup().location]",
+      "kind": "shared",
+      "properties": {
+        "displayName": "[parameters('workbookName')]",
+        "category": "sentinel",
+        "version": "1.0",
+        "sourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+        "serializedData": "[string(variables('workbookContent'))]"
+      }
+    }
+  ]
+}

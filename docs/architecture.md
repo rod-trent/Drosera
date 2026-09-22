@@ -167,6 +167,30 @@ tripwire is.
 A downstream blocklist should treat "returned our ticket" and "fetched pages
 quickly" very differently, so the format makes that distinction explicit.
 
+### Plug-in sinks
+
+Beyond the four built-in sinks (JSONL, SQLite, webhook, stderr), every sink is
+a plug-in: a factory `(options, config) -> Sink` selected by a `[sinks.<name>]`
+table in `drosera.toml`. Third-party packages register one under the
+`drosera.sinks` entry-point group. The shipped Microsoft Sentinel sink
+(`telemetry/azure.py`) uses exactly that interface, so it is also the reference
+implementation. Plug-ins follow the same rules as built-ins: construction fails
+loudly at startup, and nothing a running sink does can break serving.
+
+Events carry an optional `event` field. Absent means a request assessment;
+`"canary"` is a hit from `drosera canary watch --emit` or `scan --emit`. Session
+rollups ignore everything that is not a request.
+
+### Reporting
+
+`telemetry/html.py` renders one self-contained page (no network, inline SVG
+charts, a hash-pinned CSP) used by both `drosera report -f html` and the
+localhost-only `drosera dashboard`. Everything on it is attacker-controlled
+input and is escaped as such. For shared, long-retention reporting the same
+data goes to Sentinel, where `integrations/sentinel` supplies the workbook,
+analytics rules and playbooks, generated from the sink's column list so the
+two sides cannot drift.
+
 ## Why zero dependencies
 
 Everything is standard library, including the server (`http.server`). A security

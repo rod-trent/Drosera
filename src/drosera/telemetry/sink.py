@@ -9,6 +9,7 @@ warning on stderr and nothing else.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import json
 import os
 import queue
@@ -18,6 +19,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -43,6 +46,12 @@ class StderrSink:
     def emit(self, event: dict[str, Any]) -> None:
         if self.verbose:
             print(json.dumps(event, sort_keys=True), file=sys.stderr)
+        elif event.get("event") == "canary":
+            print(
+                f"[canary        ] {event.get('channel', '?')} {event.get('kind', '')} "
+                f"{event.get('path', '')} ({event.get('detail', '')})",
+                file=sys.stderr,
+            )
         else:
             sig = ",".join(s["id"] for s in event.get("signals", [])) or "-"
             print(
@@ -91,6 +100,7 @@ CREATE TABLE IF NOT EXISTS events (
     user_agent   TEXT,
     verdict      TEXT,
     agency       REAL,
+    automation   REAL,
     hostility    REAL,
     action       TEXT,
     hits         INTEGER,
@@ -100,7 +110,20 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_verdict ON events(verdict);
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
+CREATE TABLE IF NOT EXISTS canary_hits (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts           REAL    NOT NULL,
+    canary_id    TEXT,
+    kind         TEXT,
+    channel      TEXT,
+    detail       TEXT,
+    path         TEXT
+);
 """
+
+# Columns added after 0.1.0. A database written by an older release is
+# migrated in place when it is opened, so upgrading never needs a manual step.
+_MIGRATIONS = {"automation": "ALTER TABLE events ADD COLUMN automation REAL"}
 
 
 class SqliteSink:
@@ -113,9 +136,16 @@ class SqliteSink:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            have = {r[1] for r in self._conn.execute("PRAGMA table_info(events)")}
+            for column, ddl in _MIGRATIONS.items():
+                if column not in have:
+                    self._conn.execute(ddl)
             self._conn.commit()
 
     def emit(self, event: dict[str, Any]) -> None:
+        if event.get("event") == "canary":
+            self._emit_canary(event)
+            return
         row = (
             event.get("ts", time.time()),
             event.get("session_id"),
@@ -126,6 +156,7 @@ class SqliteSink:
             event.get("user_agent"),
             event.get("verdict"),
             event.get("agency"),
+            event.get("automation"),
             event.get("hostility"),
             event.get("action"),
             event.get("hits"),
@@ -136,8 +167,28 @@ class SqliteSink:
             with self._lock:
                 self._conn.execute(
                     "INSERT INTO events (ts,session_id,fingerprint,remote_addr,method,path,"
-                    "user_agent,verdict,agency,hostility,action,hits,tokens_burned,signals) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "user_agent,verdict,agency,automation,hostility,action,hits,tokens_burned,signals) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    row,
+                )
+                self._conn.commit()
+        except sqlite3.Error as exc:
+            _warn(f"sqlite insert failed: {exc}")
+
+    def _emit_canary(self, event: dict[str, Any]) -> None:
+        row = (
+            event.get("ts", time.time()),
+            event.get("canary_id"),
+            event.get("kind"),
+            event.get("channel"),
+            event.get("detail"),
+            event.get("path"),
+        )
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "INSERT INTO canary_hits (ts,canary_id,kind,channel,detail,path) "
+                    "VALUES (?,?,?,?,?,?)",
                     row,
                 )
                 self._conn.commit()
@@ -181,7 +232,7 @@ class WebhookSink:
             req = urllib.request.Request(
                 self.url,
                 data=body,
-                headers={"Content-Type": "application/json", "User-Agent": "drosera/0.1"},
+                headers={"Content-Type": "application/json", "User-Agent": user_agent()},
                 method="POST",
             )
             try:
@@ -221,6 +272,71 @@ class MultiSink:
                 sink.close()
 
 
+def user_agent() -> str:
+    from .. import __version__
+
+    return f"drosera/{__version__}"
+
+
+# -- plug-in sinks ---------------------------------------------------------
+#
+# Anything beyond the four built-in sinks is a plug-in: a factory that takes
+# the options table from ``[sinks.<name>]`` in drosera.toml plus the whole
+# Config, and returns an object with ``emit`` and ``close``. A third-party
+# package registers one under the ``drosera.sinks`` entry-point group:
+#
+#     [project.entry-points."drosera.sinks"]
+#     splunk = "drosera_splunk:make_sink"
+#
+# The shipped integrations use exactly this interface, so they double as the
+# reference implementation.
+
+SinkFactory = Callable[[dict[str, Any], Any], Sink]
+ENTRY_POINT_GROUP = "drosera.sinks"
+BUILTIN_PLUGINS = {
+    "azure_monitor": "drosera.telemetry.azure:make_sink",
+}
+
+
+def available_plugins() -> list[str]:
+    return sorted({*BUILTIN_PLUGINS, *(ep.name for ep in entry_points(group=ENTRY_POINT_GROUP))})
+
+
+def resolve_plugin(name: str) -> SinkFactory:
+    """Find the factory for a ``[sinks.<name>]`` table, or raise ValueError."""
+    target = BUILTIN_PLUGINS.get(name)
+    if target:
+        module, _, attr = target.partition(":")
+        return getattr(importlib.import_module(module), attr)
+    for ep in entry_points(group=ENTRY_POINT_GROUP):
+        if ep.name == name:
+            return ep.load()
+    raise ValueError(
+        f"no sink plug-in named {name!r} (available: {', '.join(available_plugins())})"
+    )
+
+
+def build_plugins(config, only: str | None = None) -> list[Sink]:
+    """Instantiate every enabled ``[sinks.*]`` table.
+
+    Misconfiguration raises here, at startup, on purpose: a sink that quietly
+    fails to start is a SIEM that quietly stops receiving evidence. Once a sink
+    is running, the usual rule applies and nothing it does can break serving.
+    """
+    out: list[Sink] = []
+    for name, options in (config.sinks or {}).items():
+        if only and name != only:
+            continue
+        if not isinstance(options, dict):
+            raise ValueError(f"[sinks.{name}] must be a table")
+        if options.get("enabled", True) is False:
+            continue
+        out.append(resolve_plugin(name)(options, config))
+    if only and not out:
+        raise ValueError(f"no enabled [sinks.{only}] table in the configuration")
+    return out
+
+
 def build(config) -> MultiSink:
     """Assemble the sink stack from a ``Config``."""
     tele = config.telemetry
@@ -233,4 +349,5 @@ def build(config) -> MultiSink:
         sinks.append(WebhookSink(tele.webhook))
     if tele.stderr:
         sinks.append(StderrSink())
+    sinks.extend(build_plugins(config))
     return MultiSink(sinks, redact_ip=tele.redact_ip, salt=config.secret)

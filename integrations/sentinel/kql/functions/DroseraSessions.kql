@@ -1,0 +1,31 @@
+// DroseraSessions: one row per honeypot session -- the same rollup `drosera report` does.
+// Verdict is the highest rung the session reached; Confidence is the strongest *kind* of
+// evidence it produced (confirmed > high > medium > low), not a score.
+let requests = DroseraEvents_CL
+    | where EventType == "request";
+let signals = requests
+    | mv-expand Signal = SignalIds to typeof(string)
+    | where isnotempty(Signal)
+    | summarize Signals = make_set(Signal, 100) by SessionId, Sensor;
+requests
+| summarize
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated),
+    Requests = count(),
+    DistinctPaths = dcount(UrlPath),
+    Agency = max(Agency),
+    Automation = max(Automation),
+    Hostility = max(Hostility),
+    TokensBurned = max(TokensBurned),
+    VerdictRank = max(case(Verdict == "hostile_agent", 4, Verdict == "agent", 3, Verdict == "automation", 2, Verdict == "unknown", 1, 0)),
+    ConfidenceRank = max(case(Confidence == "confirmed", 3, Confidence == "high", 2, Confidence == "medium", 1, 0)),
+    SrcIpAddr = take_any(SrcIpAddr),
+    HttpUserAgent = take_any(HttpUserAgent),
+    Fingerprint = take_any(Fingerprint)
+    by SessionId, Sensor
+| join kind=leftouter signals on SessionId, Sensor
+| project-away SessionId1, Sensor1
+| extend
+    Verdict = tostring(dynamic(["human", "unknown", "automation", "agent", "hostile_agent"])[VerdictRank]),
+    Confidence = tostring(dynamic(["low", "medium", "high", "confirmed"])[ConfidenceRank])
+| project-away VerdictRank, ConfidenceRank

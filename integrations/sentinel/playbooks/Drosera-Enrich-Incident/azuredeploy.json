@@ -1,0 +1,190 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "On a Sentinel incident, look up each IP entity in DroseraEvents_CL and add the address's honeypot history -- verdict, evidence class, signals, user agents -- as an incident comment. The playbook identity needs Log Analytics Reader on the workspace and Microsoft Sentinel Responder on its resource group.",
+    "generator": "integrations/sentinel/_build.py -- do not edit by hand"
+  },
+  "parameters": {
+    "PlaybookName": {
+      "type": "string",
+      "defaultValue": "Drosera-Enrich-Incident"
+    },
+    "WorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Workspace ID (the GUID on the workspace's overview page), not its name."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+      "location": "[resourceGroup().location]",
+      "kind": "V1",
+      "properties": {
+        "displayName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+        "customParameterValues": {},
+        "parameterValueType": "Alternative",
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('PlaybookName')]",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "hidden-SentinelTemplateName": "Drosera-Enrich-Incident",
+        "hidden-SentinelTemplateVersion": "1.0"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', concat('azuresentinel-', parameters('PlaybookName')))]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "Microsoft_Sentinel_incident": {
+              "type": "ApiConnectionWebhook",
+              "inputs": {
+                "body": {
+                  "callback_url": "@{listCallbackUrl()}"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                  }
+                },
+                "path": "/incident-creation"
+              }
+            }
+          },
+          "actions": {
+            "Entities_-_Get_IPs": {
+              "type": "ApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/entities/ip"
+              }
+            },
+            "For_each_IP": {
+              "type": "Foreach",
+              "foreach": "@body('Entities_-_Get_IPs')?['IPs']",
+              "runAfter": {
+                "Entities_-_Get_IPs": [
+                  "Succeeded"
+                ]
+              },
+              "actions": {
+                "Query_Drosera": {
+                  "type": "Http",
+                  "runAfter": {},
+                  "inputs": {
+                    "method": "POST",
+                    "uri": "[concat('https://api.loganalytics.io/v1/workspaces/', parameters('WorkspaceId'), '/query')]",
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": {
+                      "query": "let ip = '@{replace(items('For_each_IP')?['Address'], '''', '')}';\nlet esc = (s: string) { replace_string(replace_string(replace_string(s, \"&\", \"&amp;\"), \"<\", \"&lt;\"), \">\", \"&gt;\") };\nlet hits = DroseraEvents_CL\n    | where TimeGenerated > ago(30d)\n    | where EventType == \"request\" and SrcIpAddr == ip;\nlet sigs = toscalar(hits | mv-expand Signal = SignalIds to typeof(string) | summarize make_set(Signal, 40));\nhits\n| summarize\n    FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated), Requests = count(),\n    Sessions = dcount(SessionId), MaxAgency = max(Agency), MaxHostility = max(Hostility),\n    TokensBurned = max(TokensBurned),\n    VerdictRank = max(case(Verdict == \"hostile_agent\", 4, Verdict == \"agent\", 3, Verdict == \"automation\", 2, Verdict == \"unknown\", 1, 0)),\n    ConfidenceRank = max(case(Confidence == \"confirmed\", 3, Confidence == \"high\", 2, Confidence == \"medium\", 1, 0)),\n    UserAgents = make_set(HttpUserAgent, 5), Sensors = make_set(Sensor, 5)\n| where Requests > 0\n| extend Verdict = tostring(dynamic([\"human\", \"unknown\", \"automation\", \"agent\", \"hostile_agent\"])[VerdictRank]),\n    Confidence = tostring(dynamic([\"low\", \"medium\", \"high\", \"confirmed\"])[ConfidenceRank])\n| project Message = strcat(\n    \"<p><b>Drosera honeypot history for \", ip, \" (last 30 days)</b></p><p>\",\n    \"Verdict: <b>\", Verdict, \"</b> &middot; evidence: <b>\", Confidence, \"</b><br>\",\n    \"Sessions: \", Sessions, \" &middot; requests: \", Requests,\n    \" &middot; max LLM agency: \", round(MaxAgency, 0), \" &middot; max hostility: \", round(MaxHostility, 0), \"<br>\",\n    \"First seen \", format_datetime(FirstSeen, \"yyyy-MM-dd HH:mm\"), \" UTC &middot; last seen \",\n    format_datetime(LastSeen, \"yyyy-MM-dd HH:mm\"), \" UTC<br>\",\n    \"Signals: \", esc(strcat_array(sigs, \", \")), \"<br>\",\n    \"User agents: \", esc(strcat_array(UserAgents, \" | \")), \"<br>\",\n    \"Sensors: \", esc(strcat_array(Sensors, \", \")), \"</p>\",\n    \"<p><i>A verdict is not a judgement. Confirm before acting on anything real.</i></p>\")\n"
+                    },
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://api.loganalytics.io"
+                    }
+                  }
+                },
+                "If_the_address_has_Drosera_history": {
+                  "type": "If",
+                  "runAfter": {
+                    "Query_Drosera": [
+                      "Succeeded"
+                    ]
+                  },
+                  "expression": {
+                    "and": [
+                      {
+                        "greater": [
+                          "@length(body('Query_Drosera')?['tables']?[0]?['rows'])",
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  "actions": {
+                    "Add_comment_to_incident": {
+                      "type": "ApiConnection",
+                      "runAfter": {},
+                      "inputs": {
+                        "body": {
+                          "incidentArmId": "@triggerBody()?['object']?['id']",
+                          "message": "@{body('Query_Drosera')?['tables']?[0]?['rows']?[0]?[0]}"
+                        },
+                        "host": {
+                          "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                          }
+                        },
+                        "method": "post",
+                        "path": "/Incidents/Comment"
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  }
+                }
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "azuresentinel": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', concat('azuresentinel-', parameters('PlaybookName')))]",
+                "connectionName": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]",
+                "connectionProperties": {
+                  "authentication": {
+                    "type": "ManagedServiceIdentity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('PlaybookName')), '2019-05-01', 'full').identity.principalId]"
+    }
+  }
+}

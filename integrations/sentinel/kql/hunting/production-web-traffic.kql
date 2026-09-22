@@ -1,0 +1,23 @@
+// Did an address that behaved as an agent on the honeypot also reach production web
+// properties behind Azure Front Door or Application Gateway? Needs their diagnostic logs
+// in the same workspace (AzureDiagnostics). column_ifexists keeps the query valid whichever
+// of the two services you log.
+let lookback = 14d;
+let honeypot = DroseraEvents_CL
+    | where TimeGenerated > ago(lookback)
+    | where EventType == "request" and isnotempty(SrcIpAddr) and not(SrcIpAddr startswith "sha256:")
+    | where Verdict in ("agent", "hostile_agent")
+    | summarize HoneypotFirstSeen = min(TimeGenerated), Verdicts = make_set(Verdict, 5) by SrcIpAddr;
+AzureDiagnostics
+| where TimeGenerated > ago(lookback)
+| where Category in ("FrontDoorAccessLog", "ApplicationGatewayAccessLog", "FrontDoorWebApplicationFirewallLog", "ApplicationGatewayFirewallLog")
+| extend ClientIp = coalesce(column_ifexists("clientIp_s", ""), column_ifexists("clientIP_s", ""))
+| extend RequestUri = coalesce(column_ifexists("requestUri_s", ""), column_ifexists("requestUri", ""))
+| join kind=inner honeypot on $left.ClientIp == $right.SrcIpAddr
+| summarize
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated),
+    Requests = count(),
+    Uris = make_set(RequestUri, 20)
+    by ClientIp, Category, Resource, HoneypotFirstSeen, VerdictList = strcat_array(Verdicts, ", ")
+| order by Requests desc

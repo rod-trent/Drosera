@@ -6,6 +6,8 @@ Formats:
 ``csv``      one row per session, for a spreadsheet or a notebook
 ``ioc``      indicators (addresses, fingerprints, user agents) as JSON
 ``stix``     STIX 2.1 bundle of observed-data + indicator objects
+``mde``      Microsoft Defender for Endpoint custom-indicator import CSV
+``html``     self-contained report page (see telemetry/html.py)
 
 The IOC and STIX outputs deliberately carry a confidence field derived from the
 *evidence class*, not just the score. An address seen only via corroborating
@@ -16,7 +18,9 @@ and downstream blocklists should be able to tell those apart.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
+import ipaddress
 import json
 import sqlite3
 import time
@@ -56,6 +60,15 @@ def read_sqlite(path: str) -> Iterator[dict[str, Any]]:
             except json.JSONDecodeError:
                 event["signals"] = []
             yield event
+        has_canaries = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canary_hits'"
+        ).fetchone()
+        if has_canaries:
+            for row in conn.execute("SELECT * FROM canary_hits ORDER BY ts"):
+                event = dict(row)
+                event.pop("id", None)
+                event["event"] = "canary"
+                yield event
     finally:
         conn.close()
 
@@ -71,6 +84,8 @@ class SessionRollup:
         self.rows: dict[str, dict[str, Any]] = {}
 
     def add(self, event: dict[str, Any]) -> None:
+        if event.get("event", "request") != "request":
+            return
         sid = event.get("session_id") or event.get("fingerprint") or "?"
         row = self.rows.get(sid)
         if row is None:
@@ -141,8 +156,9 @@ def confidence_of(signal_ids: list[str]) -> str:
 # -- renderers -----------------------------------------------------------
 
 
-def to_summary(rows: list[dict[str, Any]]) -> str:
-    if not rows:
+def to_summary(rows: list[dict[str, Any]], canaries: list[dict[str, Any]] | None = None) -> str:
+    canaries = canaries or []
+    if not rows and not canaries:
         return "No events.\n"
     by_verdict: dict[str, int] = defaultdict(int)
     by_signal: dict[str, int] = defaultdict(int)
@@ -172,6 +188,13 @@ def to_summary(rows: list[dict[str, Any]]) -> str:
             out.write(
                 f"  {r['confidence']:<9} {r['verdict']:<14} {r['remote_addr']:<16} "
                 f"{r['requests']:>4} req  {r['tokens_burned']:>8,} tok  {ua}\n"
+            )
+    if canaries:
+        out.write(f"\nCanary hits ({len(canaries)})\n")
+        for c in canaries[-15:]:
+            when = time.strftime("%Y-%m-%d %H:%M", time.gmtime(float(c.get("ts") or 0)))
+            out.write(
+                f"  {when}  {c.get('channel', '?'):<14} {c.get('kind', ''):<18} {c.get('path', '')}\n"
             )
     return out.getvalue()
 
@@ -281,20 +304,136 @@ def to_stix(rows: list[dict[str, Any]], min_confidence: str = "high") -> str:
     return json.dumps({"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": objects}, indent=2)
 
 
-def render(rows: list[dict[str, Any]], fmt: str, min_confidence: str = "medium") -> str:
+# Defender for Endpoint's indicator import template, column for column.
+MDE_FIELDS = [
+    "IndicatorType", "IndicatorValue", "ExpirationTime", "Action", "Severity", "Title",
+    "Description", "RecommendedActions", "RbacGroups", "Category", "MitreTechniques",
+    "GenerateAlert",
+]
+MDE_ACTIONS = ("Audit", "Warn", "Block", "Allowed")
+_MDE_SEVERITY = {"hostile_agent": "High", "agent": "Medium", "automation": "Low"}
+
+
+def to_mde(
+    rows: list[dict[str, Any]],
+    min_confidence: str = "confirmed",
+    action: str = "Audit",
+    expire_days: int = 30,
+) -> str:
+    """Custom-indicator CSV for Defender for Endpoint's bulk import.
+
+    Only routable public addresses are emitted: private, loopback and redacted
+    (``sha256:``) values would be rejected or, worse, match your own network.
+
+    Know what an IP indicator does before choosing ``Block``: Defender applies
+    network indicators to connections *from your devices*. It will not stop the
+    agent reaching your honeypot or your website -- that is a WAF or firewall
+    job. What it does do, in ``Audit`` mode, is raise an alert if any managed
+    device ever talks to the same infrastructure, which is exactly the
+    correlation a honeypot is for.
+    """
+    if action not in MDE_ACTIONS:
+        raise ValueError(f"Defender indicator action must be one of {', '.join(MDE_ACTIONS)}")
+    order = {"low": 0, "medium": 1, "high": 2, "confirmed": 3}
+    floor = order.get(min_confidence, 3)
+    expires = (dt.datetime.now(dt.UTC) + dt.timedelta(days=expire_days)).strftime(
+        "%Y-%m-%dT%H:%M:%S.0Z"
+    )
+    best: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        addr = r.get("remote_addr") or ""
+        if order[r["confidence"]] < floor or not _is_public_ip(addr):
+            continue
+        cur = best.get(addr)
+        if cur is None:
+            best[addr] = {**r, "signals": set(r["signals"]), "sessions": 1}
+            continue
+        cur["sessions"] += 1
+        cur["signals"].update(r["signals"])
+        cur["first_seen"] = min(cur["first_seen"], r["first_seen"])
+        cur["last_seen"] = max(cur["last_seen"], r["last_seen"])
+        if _rank(r["verdict"]) > _rank(cur["verdict"]):
+            cur["verdict"] = r["verdict"]
+        if order[r["confidence"]] > order[cur["confidence"]]:
+            cur["confidence"] = r["confidence"]
+
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=MDE_FIELDS, lineterminator="\n")
+    w.writeheader()
+    for addr, r in sorted(best.items(), key=lambda kv: (-_rank(kv[1]["verdict"]), kv[0])):
+        first = time.strftime("%Y-%m-%d %H:%M", time.gmtime(r["first_seen"]))
+        last = time.strftime("%Y-%m-%d %H:%M", time.gmtime(r["last_seen"]))
+        w.writerow({
+            "IndicatorType": "IpAddress",
+            "IndicatorValue": addr,
+            "ExpirationTime": expires,
+            "Action": action,
+            "Severity": _MDE_SEVERITY.get(r["verdict"], "Informational"),
+            "Title": f"Drosera honeypot: {r['verdict']} ({r['confidence']})",
+            "Description": (
+                f"{r['sessions']} session(s) {first}..{last} UTC. "
+                f"Signals: {' '.join(sorted(r['signals']))}"
+            )[:1000],
+            "RecommendedActions": (
+                "This address interacted with a Drosera honeypot. Review which of your "
+                "devices contacted it and why. A verdict is not a judgement: confirm "
+                "before blocking anything real."
+            ),
+            "RbacGroups": "",
+            "Category": "",
+            "MitreTechniques": "",
+            "GenerateAlert": "TRUE",
+        })
+    return buf.getvalue()
+
+
+def _is_public_ip(value: str) -> bool:
+    try:
+        return ipaddress.ip_address(value).is_global
+    except ValueError:
+        return False
+
+
+# Formats whose default evidence floor differs from the CLI's "medium".
+DEFAULT_MIN_CONFIDENCE = {"mde": "confirmed"}
+
+
+def render(
+    rows: list[dict[str, Any]],
+    fmt: str,
+    min_confidence: str | None = None,
+    canaries: list[dict[str, Any]] | None = None,
+    **options: Any,
+) -> str:
+    floor = min_confidence or DEFAULT_MIN_CONFIDENCE.get(fmt, "medium")
     if fmt == "csv":
         return to_csv(rows)
     if fmt == "ioc":
-        return to_ioc(rows, min_confidence)
+        return to_ioc(rows, floor)
     if fmt == "stix":
-        return to_stix(rows, min_confidence)
+        return to_stix(rows, floor)
+    if fmt == "mde":
+        return to_mde(rows, floor, **options)
     if fmt == "json":
         return json.dumps(rows, indent=2, default=str)
-    return to_summary(rows)
+    if fmt == "html":
+        from .html import render_html
+
+        return render_html(rows, canaries or [], **options)
+    return to_summary(rows, canaries)
+
+
+def collect(path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Sessions and canary hits from one events file, in a single pass."""
+    agg = SessionRollup()
+    canaries: list[dict[str, Any]] = []
+    for event in read(path):
+        if event.get("event") == "canary":
+            canaries.append(event)
+        else:
+            agg.add(event)
+    return agg.finish(), canaries
 
 
 def rollup(path: str) -> list[dict[str, Any]]:
-    agg = SessionRollup()
-    for event in read(path):
-        agg.add(event)
-    return agg.finish()
+    return collect(path)[0]

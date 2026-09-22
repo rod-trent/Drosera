@@ -1,0 +1,24 @@
+// An LLM-driven client that also probed for secrets, admin paths, traversal or injection.
+// Agency and hostility are independent axes; this rule fires only when both are high.
+DroseraEvents_CL
+| where EventType == "request"
+| where Verdict == "hostile_agent"
+| mv-expand Signal = SignalIds to typeof(string)
+| summarize
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    Sessions = dcount(SessionId),
+    MaxAgency = max(Agency),
+    MaxHostility = max(Hostility),
+    TokensBurned = max(TokensBurned),
+    Signals = make_set(Signal, 50),
+    Paths = make_set(UrlPath, 20),
+    UserAgents = make_set(HttpUserAgent, 10),
+    Sensors = make_set(Sensor, 10)
+    by SrcIpAddr
+| extend
+    SignalList = strcat_array(Signals, ", "),
+    PathList = strcat_array(Paths, " "),
+    UserAgent = tostring(UserAgents[0]),
+    Sensor = tostring(Sensors[0])
+| project StartTime, EndTime, SrcIpAddr, Sensor, UserAgent, Sessions, MaxAgency, MaxHostility, TokensBurned, SignalList, PathList

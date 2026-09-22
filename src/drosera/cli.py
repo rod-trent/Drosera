@@ -59,13 +59,36 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("report", help="summarize captured events")
     s.add_argument("events", nargs="?", help="events file (.jsonl or .db)")
     s.add_argument(
-        "-f", "--format", default="summary", choices=["summary", "csv", "json", "ioc", "stix"]
+        "-f", "--format", default="summary",
+        choices=["summary", "csv", "json", "ioc", "stix", "mde", "html"],
+        help="mde = Defender for Endpoint indicator CSV; html = self-contained report page",
     )
     s.add_argument(
-        "--min-confidence", default="medium", choices=["low", "medium", "high", "confirmed"]
+        "--min-confidence", choices=["low", "medium", "high", "confirmed"],
+        help="evidence floor for ioc/stix/mde (default: medium; confirmed for mde)",
     )
     s.add_argument("-o", "--out", help="write to a file instead of stdout")
+    s.add_argument("--title", default="Drosera report", help="page title for -f html")
+    s.add_argument(
+        "--mde-action", default="Audit", choices=["Audit", "Warn", "Block", "Allowed"],
+        help="indicator action for -f mde (default Audit; see docs/integrations.md first)",
+    )
+    s.add_argument("--expire-days", type=int, default=30, help="indicator lifetime for -f mde")
     s.set_defaults(func=cmd_report)
+
+    s = sub.add_parser("dashboard", help="live HTML dashboard of captured events, on localhost")
+    s.add_argument("events", nargs="?", help="events file (.jsonl or .db)")
+    s.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1)")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--refresh", type=int, default=30, help="page refresh in seconds (0 = off)")
+    s.set_defaults(func=cmd_dashboard)
+
+    s = sub.add_parser("ship", help="send an existing events file to the configured plug-in sinks")
+    s.add_argument("events", nargs="?", help="events file (.jsonl or .db)")
+    s.add_argument("--sink", help="only this [sinks.<name>] table (default: all of them)")
+    s.add_argument("--since", type=float, default=0.0, metavar="HOURS",
+                   help="only events from the last N hours")
+    s.set_defaults(func=cmd_ship)
 
     s = sub.add_parser("replay", help="score a request log without serving anything")
     s.add_argument("logfile", help="combined/common access log, or '-' for stdin")
@@ -99,11 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--registry", default=".drosera/canaries.json")
     s.add_argument("--interval", type=float, default=5.0)
     s.add_argument("--atime", action="store_true", help="also report access-time changes (noisy)")
+    s.add_argument("--emit", action="store_true",
+                   help="also send hits to the configured telemetry sinks (JSONL, Sentinel, ...)")
     s.set_defaults(func=cmd_canary_watch)
 
     s = csub.add_parser("scan", help="search a file or stdin for planted credentials")
     s.add_argument("target", help="file to scan, or '-' for stdin")
     s.add_argument("--registry", default=".drosera/canaries.json")
+    s.add_argument("--emit", action="store_true",
+                   help="also send hits to the configured telemetry sinks (JSONL, Sentinel, ...)")
     s.set_defaults(func=cmd_canary_scan)
 
     s = csub.add_parser("kinds", help="list available canary kinds")
@@ -182,21 +209,84 @@ def cmd_signals(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_report(args: argparse.Namespace) -> int:
-    from .telemetry.export import render, rollup
-
-    config = _config(args)
+def _events_path(args: argparse.Namespace, config: Config) -> str | None:
     path = args.events or config.telemetry.sqlite or config.telemetry.jsonl
     if not path or not Path(path).exists():
         print(f"drosera: no events file at {path!r}", file=sys.stderr)
+        return None
+    return path
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    from .telemetry.export import collect, render
+
+    config = _config(args)
+    path = _events_path(args, config)
+    if not path:
         return 1
-    rows = rollup(path)
-    out = render(rows, args.format, args.min_confidence)
+    rows, canaries = collect(path)
+    options: dict = {}
+    if args.format == "html":
+        options = {"title": args.title, "source": Path(path).name}
+    elif args.format == "mde":
+        options = {"action": args.mde_action, "expire_days": args.expire_days}
+    out = render(rows, args.format, args.min_confidence, canaries=canaries, **options)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8", newline="\n")
         print(f"drosera: wrote {len(rows)} sessions to {args.out}")
     else:
         sys.stdout.write(out)
+    return 0
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from .server.dashboard import run
+
+    config = _config(args)
+    path = _events_path(args, config)
+    if not path:
+        return 1
+    run(path, host=args.host, port=args.port, refresh=args.refresh)
+    return 0
+
+
+def cmd_ship(args: argparse.Namespace) -> int:
+    """Backfill: push an events file through the plug-in sinks.
+
+    Only ``[sinks.*]`` plug-ins receive events. The JSONL and SQLite sinks are
+    deliberately left out -- shipping a file back into itself would duplicate
+    every line.
+    """
+    from .telemetry.export import read
+    from .telemetry.sink import MultiSink, build_plugins
+
+    config = _config(args)
+    path = _events_path(args, config)
+    if not path:
+        return 1
+    plugins = build_plugins(config, only=args.sink)
+    if not plugins:
+        print("drosera: no [sinks.*] plug-ins configured; nothing to ship to", file=sys.stderr)
+        return 1
+    # Redaction was applied when the file was written, if it was configured.
+    # Re-hashing an already hashed address would only break correlation.
+    stack = MultiSink(plugins)
+    cutoff = time.time() - args.since * 3600 if args.since else 0.0
+    n = 0
+    try:
+        for event in read(path):
+            if float(event.get("ts") or 0) < cutoff:
+                continue
+            stack.emit(event)
+            n += 1
+    finally:
+        stack.close()
+    names = ", ".join(type(p).__name__ for p in plugins)
+    print(f"drosera: offered {n} events to {names}")
+    for p in plugins:
+        sent, dropped = getattr(p, "sent", None), getattr(p, "dropped", None)
+        if sent is not None:
+            print(f"  {type(p).__name__}: sent {sent}, dropped {dropped}")
     return 0
 
 
@@ -423,8 +513,27 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         parent = target.parent if str(target.parent) else Path(".")
         if not os.access(parent if parent.exists() else Path("."), os.W_OK):
             problems.append(f"Events file {target} is not writable.")
-    if not (config.telemetry.jsonl or config.telemetry.sqlite or config.telemetry.webhook):
+    if not (config.telemetry.jsonl or config.telemetry.sqlite or config.telemetry.webhook
+            or config.sinks):
         problems.append("No telemetry sink configured; captures would be discarded.")
+    for name, options in config.sinks.items():
+        try:
+            from .telemetry.sink import resolve_plugin
+
+            resolve_plugin(name)
+        except (ValueError, ImportError) as exc:
+            problems.append(f"[sinks.{name}]: {exc}")
+            continue
+        if isinstance(options, dict) and options.get("client_secret"):
+            notes.append(
+                f"[sinks.{name}] has client_secret in the file. Prefer the AZURE_CLIENT_SECRET "
+                "environment variable, or a managed identity, so the secret stays out of config."
+            )
+        if name == "azure_monitor" and config.telemetry.redact_ip:
+            notes.append(
+                "telemetry.redact_ip is on, so Sentinel receives hashed addresses. IP entity "
+                "mapping and the sign-in correlation rules will not match anything."
+            )
     if config.trap.drip_delay > 0 and config.trap.drip_bytes <= 0:
         problems.append("trap.drip_delay is set but trap.drip_bytes is 0, so nothing will drip.")
     if config.trap.drip_delay > 0:
@@ -441,7 +550,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"drosera {__version__}")
     print(f"config: host={config.host} port={config.port} mode={config.trap.mode}")
     print(f"sinks : jsonl={config.telemetry.jsonl or '-'} sqlite={config.telemetry.sqlite or '-'} "
-          f"webhook={'set' if config.telemetry.webhook else '-'}")
+          f"webhook={'set' if config.telemetry.webhook else '-'} "
+          f"plug-ins={','.join(config.sinks) or '-'}")
     for note in notes:
         print(f"\n  note    : {note}")
     for problem in problems:
@@ -500,11 +610,31 @@ def cmd_canary_watch(args: argparse.Namespace) -> int:
     print(f"drosera: watching {len(watcher.canaries)} canaries every {args.interval}s (Ctrl-C to stop)")
     if args.atime:
         print("drosera: access-time reporting is on; expect noise from backups and indexers")
+    stack = _canary_sinks(args)
+
+    def report(hit) -> None:
+        event = hit.to_dict()
+        print(json.dumps(event))
+        if stack is not None:
+            stack.emit({"event": "canary", **event})
+
     try:
-        watcher.run(lambda hit: print(json.dumps(hit.to_dict())), interval=args.interval)
+        watcher.run(report, interval=args.interval)
     except KeyboardInterrupt:
         print("\ndrosera: stopped")
+    finally:
+        if stack is not None:
+            stack.close()
     return 0
+
+
+def _canary_sinks(args: argparse.Namespace):
+    """The configured sink stack, when ``--emit`` asked for it."""
+    if not getattr(args, "emit", False):
+        return None
+    from .telemetry.sink import build
+
+    return build(_config(args))
 
 
 def cmd_canary_scan(args: argparse.Namespace) -> int:
@@ -517,8 +647,13 @@ def cmd_canary_scan(args: argparse.Namespace) -> int:
     )
     known = index(load_registry(args.registry))
     hits = list(scan_for_canaries(text, config.secret, known))
+    stack = _canary_sinks(args)
     for hit in hits:
         print(json.dumps(hit.to_dict()))
+        if stack is not None:
+            stack.emit({"event": "canary", **hit.to_dict()})
+    if stack is not None:
+        stack.close()
     if not hits:
         print("drosera: no canary credentials found", file=sys.stderr)
         return 0

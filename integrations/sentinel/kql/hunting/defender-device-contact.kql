@@ -1,0 +1,26 @@
+// Defender for Endpoint: did any managed device talk to an address that bit the honeypot?
+// Runs in Sentinel (with the Microsoft Defender XDR connector streaming DeviceNetworkEvents)
+// or in Defender XDR advanced hunting once the workspace is onboarded to the Defender portal.
+//
+// Outbound: a device reached out to the agent's infrastructure -- callback, staging, C2.
+// Inbound:  an internet-facing device accepted a connection from the same client, i.e. the
+//           agent that explored the honeypot is also exploring production.
+let lookback = 14d;
+let honeypot = DroseraEvents_CL
+    | where TimeGenerated > ago(lookback)
+    | where EventType == "request" and isnotempty(SrcIpAddr) and not(SrcIpAddr startswith "sha256:")
+    | where Verdict in ("agent", "hostile_agent") or Hostility >= 55
+    | summarize HoneypotFirstSeen = min(TimeGenerated), Verdicts = make_set(Verdict, 5) by SrcIpAddr;
+DeviceNetworkEvents
+| where Timestamp > ago(lookback)
+| where ActionType in ("ConnectionSuccess", "InboundConnectionAccepted", "ConnectionAttempt")
+| join kind=inner honeypot on $left.RemoteIP == $right.SrcIpAddr
+| extend Direction = iff(ActionType == "InboundConnectionAccepted", "inbound", "outbound")
+| summarize
+    FirstContact = min(Timestamp),
+    LastContact = max(Timestamp),
+    Connections = count(),
+    Ports = make_set(RemotePort, 10),
+    Processes = make_set(InitiatingProcessFileName, 10)
+    by DeviceName, RemoteIP, Direction, HoneypotFirstSeen, VerdictList = strcat_array(Verdicts, ", ")
+| order by LastContact desc

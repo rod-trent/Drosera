@@ -1,0 +1,6 @@
+// DroseraCanaryHits: canary events from `drosera canary watch --emit` and `drosera canary scan --emit`.
+// value_seen is proof a planted credential was used. file_read and file_modified are hints:
+// backups, antivirus and indexers touch files too.
+DroseraEvents_CL
+| where EventType == "canary"
+| project TimeGenerated, Sensor, CanaryChannel, CanaryKind, CanaryId, FilePath, Detail, Confidence

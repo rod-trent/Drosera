@@ -62,6 +62,8 @@ jobs:
             echo "::error::docs/detection-signals.md is stale -- run python docs/_gen_signals.py"
             exit 1
           }
+      - name: Fail if the Sentinel templates differ from the code
+        run: python integrations/sentinel/_build.py --check
 
   ethics-guardrail:
     # The inertness check is the project's central safety property. If it stops

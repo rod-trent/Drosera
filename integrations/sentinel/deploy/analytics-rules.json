@@ -1,0 +1,372 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Drosera analytics rules for Microsoft Sentinel. Deploy after ingestion.json, once DroseraEvents_CL exists -- rule validation fails against a missing table.",
+    "generator": "integrations/sentinel/_build.py -- do not edit by hand"
+  },
+  "parameters": {
+    "workspace": {
+      "type": "string",
+      "metadata": {
+        "description": "Sentinel workspace name."
+      }
+    },
+    "deploySigninCorrelation": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Also deploy the Entra ID sign-in correlation rule. Needs SigninLogs."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspace'), '/Microsoft.SecurityInsights/7c200e3d-6596-5c42-acff-9485e713d042')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Drosera - LLM agent confirmed by comprehension evidence",
+        "description": "A client read the honeypot's plain-English notice and acted on it -- returned the deployment's HMAC-signed ticket, sent the requested purpose header, or followed the prose instruction. A crawler cannot do this; an LLM agent can. This is evidence about the software, not a judgement about whoever is running it.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "// An LLM-driven client read the honeypot's plain-English notice and acted on it:\n// it returned this deployment's signed ticket, sent the requested purpose header,\n// or followed the prose instruction. Hostile agents have their own rule.\nDroseraEvents_CL\n| where EventType == \"request\"\n| where Verdict in (\"agent\", \"hostile_agent\") and Confidence in (\"confirmed\", \"high\")\n| mv-expand Signal = SignalIds to typeof(string)\n| summarize\n    StartTime = min(TimeGenerated),\n    EndTime = max(TimeGenerated),\n    Sessions = dcount(SessionId),\n    MaxAgency = max(Agency),\n    TokensBurned = max(TokensBurned),\n    Signals = make_set(Signal, 50),\n    UserAgents = make_set(HttpUserAgent, 10),\n    Sensors = make_set(Sensor, 10),\n    HostileEvents = countif(Verdict == \"hostile_agent\")\n    by SrcIpAddr\n| where HostileEvents == 0\n| extend\n    SignalList = strcat_array(Signals, \", \"),\n    UserAgent = tostring(UserAgents[0]),\n    Sensor = tostring(Sensors[0])\n| project StartTime, EndTime, SrcIpAddr, Sensor, UserAgent, Sessions, MaxAgency, TokensBurned, SignalList\n",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Reconnaissance"
+        ],
+        "techniques": [
+          "T1594",
+          "T1595"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "SrcIpAddr"
+              }
+            ]
+          },
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Sensor"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Sessions": "Sessions",
+          "Agency": "MaxAgency",
+          "Signals": "SignalList",
+          "UserAgent": "UserAgent",
+          "TokensBurned": "TokensBurned"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Drosera: LLM agent at {{SrcIpAddr}}"
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspace'), '/Microsoft.SecurityInsights/40e86d22-3d29-5cde-9096-e68f32b407aa')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Drosera - Hostile LLM agent",
+        "description": "An LLM-driven client that also probed for secrets, admin paths, path traversal or injection. Agency and hostility are scored independently; both are high here.",
+        "severity": "High",
+        "enabled": true,
+        "query": "// An LLM-driven client that also probed for secrets, admin paths, traversal or injection.\n// Agency and hostility are independent axes; this rule fires only when both are high.\nDroseraEvents_CL\n| where EventType == \"request\"\n| where Verdict == \"hostile_agent\"\n| mv-expand Signal = SignalIds to typeof(string)\n| summarize\n    StartTime = min(TimeGenerated),\n    EndTime = max(TimeGenerated),\n    Sessions = dcount(SessionId),\n    MaxAgency = max(Agency),\n    MaxHostility = max(Hostility),\n    TokensBurned = max(TokensBurned),\n    Signals = make_set(Signal, 50),\n    Paths = make_set(UrlPath, 20),\n    UserAgents = make_set(HttpUserAgent, 10),\n    Sensors = make_set(Sensor, 10)\n    by SrcIpAddr\n| extend\n    SignalList = strcat_array(Signals, \", \"),\n    PathList = strcat_array(Paths, \" \"),\n    UserAgent = tostring(UserAgents[0]),\n    Sensor = tostring(Sensors[0])\n| project StartTime, EndTime, SrcIpAddr, Sensor, UserAgent, Sessions, MaxAgency, MaxHostility, TokensBurned, SignalList, PathList\n",
+        "queryFrequency": "PT15M",
+        "queryPeriod": "PT15M",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Reconnaissance",
+          "InitialAccess"
+        ],
+        "techniques": [
+          "T1595",
+          "T1190"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "SrcIpAddr"
+              }
+            ]
+          },
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Sensor"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Sessions": "Sessions",
+          "Agency": "MaxAgency",
+          "Hostility": "MaxHostility",
+          "Signals": "SignalList",
+          "Paths": "PathList",
+          "UserAgent": "UserAgent"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Drosera: hostile LLM agent at {{SrcIpAddr}}"
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspace'), '/Microsoft.SecurityInsights/73ba1b0a-433a-56b3-bf8d-65873246bd46')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Drosera - Canary credential used",
+        "description": "A planted canary credential was presented to the honeypot or found by drosera canary scan. The value exists nowhere except inside bait, so this is proof the bait was read and its contents moved. Canary credentials authenticate nowhere.",
+        "severity": "High",
+        "enabled": true,
+        "query": "// A planted canary credential turned up somewhere it should not: presented in a request\n// to the honeypot, or found by `drosera canary scan`. The value exists nowhere except\n// inside bait, so this is proof the bait was read and its contents moved.\nlet fromRequests = DroseraEvents_CL\n    | where EventType == \"request\" and set_has_element(SignalIds, \"int.canary_used\")\n    | project TimeGenerated, Sensor, SrcIpAddr, HttpUserAgent, Location = UrlPath,\n        Detail = \"A planted canary credential was presented in a request to the honeypot\";\nlet fromScans = DroseraEvents_CL\n    | where EventType == \"canary\" and CanaryChannel == \"value_seen\"\n    | project TimeGenerated, Sensor, SrcIpAddr = \"\", HttpUserAgent = \"\", Location = FilePath, Detail;\nunion fromRequests, fromScans\n| summarize\n    StartTime = min(TimeGenerated),\n    EndTime = max(TimeGenerated),\n    Occurrences = count(),\n    Details = make_set(Detail, 10),\n    Locations = make_set(Location, 10)\n    by Sensor, SrcIpAddr, HttpUserAgent\n| extend DetailText = strcat_array(Details, \" | \"), LocationList = strcat_array(Locations, \" \")\n| project StartTime, EndTime, Sensor, SrcIpAddr, HttpUserAgent, Occurrences, DetailText, LocationList\n",
+        "queryFrequency": "PT15M",
+        "queryPeriod": "PT15M",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "CredentialAccess",
+          "Exfiltration"
+        ],
+        "techniques": [
+          "T1552"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "SrcIpAddr"
+              }
+            ]
+          },
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Sensor"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Occurrences": "Occurrences",
+          "Detail": "DetailText",
+          "Location": "LocationList"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Drosera: canary credential used on {{Sensor}}"
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspace'), '/Microsoft.SecurityInsights/c6072cb1-4717-5ef4-9aae-5d8c2a1794e3')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Drosera - Canary file modified or read",
+        "description": "A planted canary file changed (or was read, when access-time watching is on). A hint, not proof: backups, antivirus and indexers touch files too. Correlate with process and logon activity on the host.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "// A planted canary file was modified (or, with --atime, read). This is a hint, not proof:\n// backup agents, antivirus and file indexers touch files innocently. Correlate with the\n// host's process and logon activity before concluding anything.\nDroseraEvents_CL\n| where EventType == \"canary\" and CanaryChannel in (\"file_modified\", \"file_read\")\n| summarize\n    StartTime = min(TimeGenerated),\n    EndTime = max(TimeGenerated),\n    Occurrences = count(),\n    Channels = make_set(CanaryChannel),\n    Kinds = make_set(CanaryKind)\n    by Sensor, FilePath\n| extend ChannelList = strcat_array(Channels, \", \"), KindList = strcat_array(Kinds, \", \")\n| project StartTime, EndTime, Sensor, FilePath, Occurrences, ChannelList, KindList\n",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "CredentialAccess",
+          "Collection"
+        ],
+        "techniques": [
+          "T1552",
+          "T1005"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Sensor"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "File": "FilePath",
+          "Channels": "ChannelList",
+          "Kinds": "KindList"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Drosera: canary file touched on {{Sensor}}"
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        }
+      }
+    },
+    {
+      "condition": "[parameters('deploySigninCorrelation')]",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspace'), '/Microsoft.SecurityInsights/e9c11c31-72f6-51bf-bf14-ff81abddc86f')]",
+      "kind": "Scheduled",
+      "properties": {
+        "displayName": "Drosera - Honeypot agent address signing in to Entra ID",
+        "description": "An address that behaved as an LLM agent, or with high hostility, on the honeypot in the last 7 days is attempting to sign in to Entra ID. Requires the Microsoft Entra ID (SigninLogs) connector. High severity when an attempt succeeded.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "// An address that behaved as an LLM agent, or with high hostility, on the honeypot in the\n// last 7 days is now attempting to sign in to Entra ID. Needs the Entra ID (SigninLogs)\n// data connector. Severity is raised to High when any attempt succeeded.\nlet lookback = 7d;\nlet honeypot = DroseraEvents_CL\n    | where TimeGenerated > ago(lookback)\n    | where EventType == \"request\"\n    | where isnotempty(SrcIpAddr) and not(SrcIpAddr startswith \"sha256:\")\n    | where Verdict in (\"agent\", \"hostile_agent\") or Hostility >= 55\n    | summarize\n        HoneypotFirstSeen = min(TimeGenerated),\n        HoneypotLastSeen = max(TimeGenerated),\n        HoneypotVerdicts = make_set(Verdict, 5),\n        HoneypotSessions = dcount(SessionId)\n        by SrcIpAddr;\nSigninLogs\n| where TimeGenerated > ago(1h)\n| join kind=inner honeypot on $left.IPAddress == $right.SrcIpAddr\n| summarize\n    StartTime = min(TimeGenerated),\n    EndTime = max(TimeGenerated),\n    Attempts = count(),\n    Successes = countif(ResultType == \"0\"),\n    Apps = make_set(AppDisplayName, 10)\n    by UserPrincipalName, IPAddress, HoneypotFirstSeen, HoneypotLastSeen, HoneypotSessions,\n       HoneypotVerdictList = strcat_array(HoneypotVerdicts, \", \")\n| extend AppList = strcat_array(Apps, \", \"), Severity = iff(Successes > 0, \"High\", \"Medium\")\n| project StartTime, EndTime, UserPrincipalName, IPAddress, Attempts, Successes, AppList,\n    HoneypotVerdictList, HoneypotSessions, HoneypotFirstSeen, HoneypotLastSeen, Severity\n",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "P7D",
+        "triggerOperator": "GreaterThan",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1078",
+          "T1110"
+        ],
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "UserPrincipalName"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "IPAddress"
+              }
+            ]
+          }
+        ],
+        "customDetails": {
+          "Attempts": "Attempts",
+          "Successes": "Successes",
+          "Apps": "AppList",
+          "HoneypotVerdicts": "HoneypotVerdictList"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Drosera: honeypot agent address {{IPAddress}} signing in as {{UserPrincipalName}}",
+          "alertSeverityColumnName": "Severity"
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities",
+            "groupByEntities": [],
+            "groupByAlertDetails": [],
+            "groupByCustomDetails": []
+          }
+        }
+      }
+    }
+  ]
+}

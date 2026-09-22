@@ -8,6 +8,12 @@ All notable changes to Drosera are recorded here. Format follows
 
 ### Fixed
 
+- The SQLite sink never stored the `automation` score, so every report read
+  from a `.db` file showed `automation` as 0. The column is added, and databases
+  written by 0.1.0 are migrated in place when opened.
+- `drosera canary watch` printed hits to stdout only; they could not reach any
+  sink. See `--emit` below.
+
 - `FileWatcher` missed a canary modification that happened less than a
   millisecond after the previous poll. It compared float-seconds timestamps
   with a 0.001 tolerance, and on a fast filesystem the real gap is smaller than
@@ -18,6 +24,37 @@ All notable changes to Drosera are recorded here. Format follows
   starts, and reports separately when a file was already modified before then.
 
 ### Added
+
+- **Microsoft Sentinel sink** (`[sinks.azure_monitor]`): ships events to a
+  custom table through the Azure Monitor Logs Ingestion API. Standard library
+  only, with client-secret or managed-identity auth. It is batched, gzipped,
+  lossy under pressure rather than blocking, and filtered by `min_verdict` so
+  human traffic never leaves the host.
+- **Sentinel content pack** under `integrations/sentinel`: an ARM deployment for
+  the table, data collection endpoint and rule, and parser functions; five
+  analytics rules; a workbook; hunting queries that join Drosera with Defender
+  XDR, Entra ID sign-ins and web gateway logs; and two playbooks (incident
+  enrichment, and Defender for Endpoint indicator submission). The templates
+  are generated from the sink's column list and CI fails if they drift.
+- **Plug-in sinks**: any `[sinks.<name>]` table resolves to a factory
+  registered under the `drosera.sinks` entry-point group. The Sentinel sink is
+  the reference implementation.
+- **HTML report** (`drosera report -f html`): one self-contained page with
+  headline counts, a verdict timeline, signal and user-agent breakdowns, canary
+  hits and a filterable session table. Everything is escaped, and a
+  hash-pinned CSP allows no script but the page's own.
+- **`drosera dashboard`**: the same page served live on localhost, re-rendered
+  when the events file changes, with JSON endpoints for scripts.
+- **Defender for Endpoint export** (`drosera report -f mde`): an indicator
+  import CSV covering public addresses only, `confirmed` evidence only, `Audit`
+  and a 30-day expiry by default.
+- **`drosera ship`**: backfill an events file through the configured plug-in
+  sinks.
+- `drosera canary watch --emit` and `canary scan --emit` send hits through the
+  configured sinks as `"event": "canary"` records. Reports show them in their
+  own section and keep them out of session rollups.
+- `drosera doctor` checks plug-in sinks, and warns about secrets in the config
+  file and about `redact_ip` combined with Sentinel.
 
 - A public playground under `web/`: a Vercel-deployable page that scores four
   request traces with the real engine, and can score the visitor's own browser.

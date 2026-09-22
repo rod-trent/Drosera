@@ -1,0 +1,14 @@
+// A planted canary file was modified (or, with --atime, read). This is a hint, not proof:
+// backup agents, antivirus and file indexers touch files innocently. Correlate with the
+// host's process and logon activity before concluding anything.
+DroseraEvents_CL
+| where EventType == "canary" and CanaryChannel in ("file_modified", "file_read")
+| summarize
+    StartTime = min(TimeGenerated),
+    EndTime = max(TimeGenerated),
+    Occurrences = count(),
+    Channels = make_set(CanaryChannel),
+    Kinds = make_set(CanaryKind)
+    by Sensor, FilePath
+| extend ChannelList = strcat_array(Channels, ", "), KindList = strcat_array(Kinds, ", ")
+| project StartTime, EndTime, Sensor, FilePath, Occurrences, ChannelList, KindList

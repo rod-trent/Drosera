@@ -79,6 +79,9 @@ class Config:
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     session_ttl: float = 3600.0
     max_sessions: int = 20000
+    # Plug-in sinks, one table per plug-in: ``[sinks.azure_monitor]`` etc.
+    # Options are passed to the plug-in untouched; see telemetry/sink.py.
+    sinks: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Paths the middleware must never trap or decorate (health checks, etc).
     exempt_paths: list[str] = field(default_factory=lambda: ["/healthz", "/readyz", "/metrics"])
     # Actions per verdict. Tuning this is the main deployment decision.
@@ -150,6 +153,10 @@ class Config:
             self.telemetry.webhook = v
         if v := env.get("DROSERA_SITE_NAME"):
             self.lure.site_name = v
+        # Enough to switch the Sentinel sink on from a container's environment
+        # alone; the sink reads the rest of its settings from the same place.
+        if env.get("DROSERA_AZURE_ENDPOINT") and "azure_monitor" not in self.sinks:
+            self.sinks["azure_monitor"] = {}
 
     def action_for(self, verdict: Verdict) -> Action:
         raw = self.responses.get(verdict.value, Action.ALLOW.value)
@@ -164,7 +171,17 @@ class Config:
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["secret"] = "***" if self.secret else ""
+        d["sinks"] = {
+            name: {k: ("***" if _looks_secret(k) and v else v) for k, v in opts.items()}
+            for name, opts in self.sinks.items()
+            if isinstance(opts, dict)
+        }
         return d
+
+
+def _looks_secret(key: str) -> bool:
+    key = key.lower()
+    return any(word in key for word in ("secret", "password", "token", "key"))
 
 
 def with_int(obj: Any, attr: str, raw: str) -> None:
@@ -213,6 +230,19 @@ sqlite    = ""
 webhook   = ""
 stderr    = false
 redact_ip = false
+
+# Plug-in sinks. Each [sinks.<name>] table switches one on. Built in:
+#
+# [sinks.azure_monitor]           # Microsoft Sentinel / Azure Monitor Logs
+# endpoint    = "https://<dce>.<region>.ingest.monitor.azure.com"
+# rule_id     = "dcr-00000000000000000000000000000000"
+# stream      = "Custom-DroseraEvents"
+# min_verdict = "automation"     # skip human/unknown traffic to control cost
+# auth        = "client_secret"  # or "managed_identity"
+# # tenant_id / client_id / client_secret: prefer the AZURE_TENANT_ID,
+# # AZURE_CLIENT_ID and AZURE_CLIENT_SECRET environment variables.
+#
+# See integrations/sentinel/README.md for the one-command Azure setup.
 
 [responses]
 human         = "allow"

@@ -1,0 +1,17 @@
+// User-Agent strings of LLM agents seen for the first time in the last day, against a
+// 30-day baseline. New agent frameworks tend to show up here before anywhere else.
+let baseline = DroseraEvents_CL
+    | where TimeGenerated between (ago(30d) .. ago(1d))
+    | where EventType == "request" and Verdict in ("agent", "hostile_agent")
+    | distinct HttpUserAgent;
+DroseraEvents_CL
+| where TimeGenerated > ago(1d)
+| where EventType == "request" and Verdict in ("agent", "hostile_agent")
+| where HttpUserAgent !in (baseline)
+| summarize
+    FirstSeen = min(TimeGenerated),
+    Sessions = dcount(SessionId),
+    Addresses = make_set(SrcIpAddr, 10),
+    Confidence = make_set(Confidence, 4)
+    by HttpUserAgent
+| order by Sessions desc
