@@ -6,22 +6,10 @@ All notable changes to Drosera are recorded here. Format follows
 
 ## [Unreleased]
 
-### Fixed
+## [0.2.0] - 2026-09-22
 
-- The SQLite sink never stored the `automation` score, so every report read
-  from a `.db` file showed `automation` as 0. The column is added, and databases
-  written by 0.1.0 are migrated in place when opened.
-- `drosera canary watch` printed hits to stdout only; they could not reach any
-  sink. See `--emit` below.
-
-- `FileWatcher` missed a canary modification that happened less than a
-  millisecond after the previous poll. It compared float-seconds timestamps
-  with a 0.001 tolerance, and on a fast filesystem the real gap is smaller than
-  that. Comparisons now use integer nanosecond timestamps, which need no
-  tolerance at all. It also compares file size, because Windows timestamps
-  advance only on the ~15.6ms system clock tick and two writes inside one tick
-  share an mtime. The watcher now baselines from a live stat when watching
-  starts, and reports separately when a file was already modified before then.
+Evidence goes where the SOC works: Microsoft Sentinel, Defender correlation,
+and reporting. Nothing in the detection engine, lures or traps changed.
 
 ### Added
 
@@ -56,24 +44,13 @@ All notable changes to Drosera are recorded here. Format follows
 - `drosera doctor` checks plug-in sinks, and warns about secrets in the config
   file and about `redact_ip` combined with Sentinel.
 
-- A public playground under `web/`: a Vercel-deployable page that scores four
-  request traces with the real engine, and can score the visitor's own browser.
-  Guarded by `tests/test_playground.py` so the demo cannot drift from the
-  library it is demonstrating.
+### Fixed
 
-### Changed
-
-- Packaging modernised for PyPI: PEP 639 SPDX licence expression with explicit
-  licence files, a `MANIFEST.in` so the sdist carries tests and docs, and
-  absolute documentation links in the README (relative ones 404 on PyPI).
-- Release is automated via PyPI Trusted Publishing on a `v*` tag. No API token
-  exists in the repository or its secrets.
-
-- `Verdict`, `Category` and `Action` now subclass `enum.StrEnum` instead of
-  `(str, Enum)`. Behaviour is unchanged for `.value`, comparison and JSON
-  serialisation.
-- Pinned `ruff>=0.16,<0.17` for development. An open-ended range meant a new
-  linter release could fail CI on an unrelated commit.
+- The SQLite sink never stored the `automation` score, so every report read
+  from a `.db` file showed `automation` as 0. The column is added, and databases
+  written by 0.1.0 are migrated in place when opened.
+- `drosera canary watch` printed hits to stdout only; they could not reach any
+  sink. See `--emit` below.
 
 ## [0.1.0] - 2026-09-05
 
@@ -107,6 +84,35 @@ First release.
 - **CLI**: `serve`, `demo`, `replay`, `report`, `signals`, `canary`, `init`,
   `doctor`.
 - Zero runtime dependencies, enforced in CI.
+- A public playground under `web/`: a Vercel-deployable page that scores four
+  request traces with the real engine, and can score the visitor's own browser.
+  Guarded by `tests/test_playground.py` so the demo cannot drift from the
+  library it is demonstrating.
 
-[Unreleased]: https://github.com/rod-trent/Drosera/compare/v0.1.0...HEAD
+### Changed
+
+- Packaging modernised for PyPI: PEP 639 SPDX licence expression with explicit
+  licence files, a `MANIFEST.in` so the sdist carries tests and docs, and
+  absolute documentation links in the README (relative ones 404 on PyPI).
+- Release is automated via PyPI Trusted Publishing on a `v*` tag. No API token
+  exists in the repository or its secrets.
+- `Verdict`, `Category` and `Action` now subclass `enum.StrEnum` instead of
+  `(str, Enum)`. Behaviour is unchanged for `.value`, comparison and JSON
+  serialisation.
+- Pinned `ruff>=0.16,<0.17` for development. An open-ended range meant a new
+  linter release could fail CI on an unrelated commit.
+
+### Fixed
+
+- `FileWatcher` missed a canary modification that happened less than a
+  millisecond after the previous poll. It compared float-seconds timestamps
+  with a 0.001 tolerance, and on a fast filesystem the real gap is smaller than
+  that. Comparisons now use integer nanosecond timestamps, which need no
+  tolerance at all. It also compares file size, because Windows timestamps
+  advance only on the ~15.6ms system clock tick and two writes inside one tick
+  share an mtime. The watcher now baselines from a live stat when watching
+  starts, and reports separately when a file was already modified before then.
+
+[Unreleased]: https://github.com/rod-trent/Drosera/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rod-trent/Drosera/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rod-trent/Drosera/releases/tag/v0.1.0
