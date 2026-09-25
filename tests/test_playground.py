@@ -152,3 +152,22 @@ def test_precomputed_scenarios_carry_the_headline_claim():
     assert s["scanner"]["agency"] == 0.0
     assert s["agent"]["agency"] > 90
     assert s["human"]["verdict"] == "human"
+
+
+def test_the_redirect_note_on_the_page_is_the_real_one():
+    """The page quotes a redirect note verbatim. It must stay what the library emits."""
+    import html
+    import re
+
+    from drosera.config import Config
+    from drosera.models import Bait
+    from drosera.trap import redirect
+
+    page = (WEB_API.parent / "index.html").read_text(encoding="utf-8")
+    section = page.split('<section id="redirect">', 1)[1]
+    shown = re.search(r'<div class="notice">(.*?)</div>', section, re.S).group(1)
+    shown = html.unescape(re.sub(r"</?span[^>]*>", "", shown))
+
+    bait = Bait("demo", "drs-d5f99c52c4-b4b4661ac7", "", "", "", "", "", "")
+    expected = redirect.notice_text(redirect.concern_for({"int.secret_hunting"}), bait, Config(secret="x"))
+    assert shown.strip() == expected.strip(), "web/index.html quotes a stale redirect note"
