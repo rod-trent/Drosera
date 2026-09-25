@@ -79,6 +79,7 @@ def assert_inert(text: str, where: str = "bait") -> str:
 PURPOSE_HEADER = "X-Agent-Purpose"
 REGISTRATION_PATH = "/.well-known/agent-registration"
 POLICY_PATH = "/.well-known/agent-policy"
+STANDDOWN_PATH = "/.well-known/agent-standdown"
 
 # Paths that look like ordinary content so following them is not obviously a
 # trap, but that are only reachable from bait.

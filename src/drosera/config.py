@@ -46,6 +46,10 @@ class TrapConfig:
     drip_bytes: int = 0  # 0 = no drip; else chunk size for slow delivery
     drip_delay: float = 0.0  # seconds between chunks
     session_byte_budget: int = 0  # 0 = unlimited; else stop feeding after N bytes
+    # ``redirect`` action: hostile requests a session may make *after* being
+    # shown the redirect notice before it gets ``redirect_fallback`` instead.
+    redirect_grace: int = 2
+    redirect_fallback: str = "tarpit"
 
 
 @dataclass
@@ -223,6 +227,8 @@ max_depth            = 0          # 0 = unbounded
 drip_bytes           = 0          # >0 enables slow chunked delivery
 drip_delay           = 0.0
 session_byte_budget  = 0          # 0 = unlimited
+redirect_grace       = 2          # hostile requests tolerated after a redirect notice
+redirect_fallback    = "tarpit"   # what they get once that grace is used up
 
 [telemetry]
 jsonl     = "drosera-events.jsonl"
@@ -249,5 +255,5 @@ human         = "allow"
 unknown       = "allow"
 automation    = "observe"
 agent         = "tarpit"
-hostile_agent = "tarpit"
+hostile_agent = "tarpit"          # or "redirect" -- see docs/deployment.md
 """

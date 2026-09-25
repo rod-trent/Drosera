@@ -6,6 +6,19 @@ All notable changes to Drosera are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`redirect` action**: instead of trapping a hostile agent, show it a plain
+  note that names what it was seen doing and offers three ways out: carry on
+  legitimately, stop here, or pause and consult its user. Every notice passes
+  `assert_reductive`, which rejects claimed authority, threats, and anything
+  reaching beyond this host and session. Opt in with
+  `hostile_agent = "redirect"`; see `docs/deployment.md`.
+- Outcome signals `cmp.stand_down`, `int.redirect_heeded` and
+  `int.redirect_ignored`, plus a `/.well-known/agent-standdown` endpoint, so
+  each redirect's result is measurable.
+- `trap.redirect_grace` and `trap.redirect_fallback` settings.
+
 ## [0.2.0] - 2026-09-22
 
 Evidence goes where the SOC works: Microsoft Sentinel, Defender correlation,

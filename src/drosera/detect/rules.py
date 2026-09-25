@@ -112,6 +112,14 @@ _COMPREHENSION = dict(
             "Reacted to a conditional instruction (did X only when the page said to), "
             "which requires evaluating a condition in prose.",
         ),
+        _d(
+            "cmp.stand_down",
+            Category.COMPREHENSION,
+            0.94,
+            0.0,
+            "Called the stand-down path offered only in the prose of a redirect "
+            "notice, with its ticket. The agent read the note and chose to stop.",
+        ),
     )
 )
 
@@ -322,6 +330,22 @@ _INTENT = dict(
             0.70,
             "Submitted content containing instructions aimed at a downstream model "
             "-- an attempt to poison whatever reads this data.",
+        ),
+        _d(
+            "int.redirect_ignored",
+            Category.INTENT,
+            0.10,
+            0.85,
+            "Kept up hostile requests after being shown a redirect notice that "
+            "named the behaviour and offered a way out.",
+        ),
+        _d(
+            "int.redirect_heeded",
+            Category.INTENT,
+            0.0,
+            0.0,
+            "Outcome marker, no weight: after a redirect notice, the session's next "
+            "request was benign. The agent changed course.",
         ),
     )
 )

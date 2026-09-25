@@ -12,7 +12,8 @@ import re
 import statistics
 from collections.abc import Iterator
 
-from ..models import Bait, Observation, SessionState
+from ..lure.nectar import STANDDOWN_PATH
+from ..models import Bait, Category, Observation, SessionState, Signal
 from ..util import looks_like_prose
 from .rules import get
 
@@ -301,6 +302,36 @@ def intent_signals(obs: Observation) -> Iterator:
         yield get("int.destructive_method").fire(f"{obs.method} {obs.path}")
     if obs.body and (m := PROMPT_INJECTION.search(obs.body[:8192])):
         yield get("int.prompt_injection_carrier").fire(f"model-directed text {m.group(0)[:80]!r}")
+
+
+# --------------------------------------------------------------------------
+# Redirect outcomes
+# --------------------------------------------------------------------------
+
+
+def redirect_signals(
+    obs: Observation, state: SessionState, bait: Bait | None, found: list[Signal], validate=None
+) -> Iterator:
+    """How a session responded to a redirect notice it was shown earlier.
+
+    Three outcomes, mirroring the three ways out the notice offers: it stood
+    down (explicitly, with the ticket), it carried on benignly, or it kept
+    probing. Silence -- no further requests at all -- is also a stand-down,
+    but that can only be seen in hindsight, from the logs.
+    """
+    if not state.redirects_served:
+        return
+    if obs.path.rstrip("/") == STANDDOWN_PATH:
+        ticket = obs.qs("ticket") or ""
+        if bait and ticket and (ticket == bait.ticket or (validate and validate(ticket))):
+            yield get("cmp.stand_down").fire("stood down after a redirect notice")
+        return
+    if any(s.category is Category.INTENT and s.hostility > 0 for s in found):
+        yield get("int.redirect_ignored").fire(
+            f"hostile request #{state.redirect_ignored + 1} after {state.redirects_served} notice(s)"
+        )
+    elif "redirect_heeded" not in state.labels:
+        yield get("int.redirect_heeded").fire(f"benign {obs.method} {obs.path} after a notice")
 
 
 def canary_signal(token_id: str, where: str) -> Iterator:

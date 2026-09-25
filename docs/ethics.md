@@ -10,15 +10,37 @@ contribution is reviewed against.
 
 ## The line
 
-**Drosera detects and delays. It does not attack, hijack, or steer.**
+**Drosera detects, delays, and may ask an agent to stand down. It does not
+attack or hijack.**
 
 An agent that lands in a Drosera deployment is someone else's software running
 on someone else's computer, usually on behalf of a person who has no idea what
 it is doing. Whatever we think of that agent, we do not get to reach through it.
 
+The one form of steering Drosera does is *reductive*: the `redirect` action
+tells a hostile agent, honestly, what it was seen doing here and asks it to do
+less of it — stop that behaviour on this host, identify itself, or pause and
+check with its own user. That is the same thing a person would say at the door,
+and it asks the agent for nothing it would not already do if it knew the
+context. `drosera.trap.redirect.assert_reductive` holds every notice to that:
+
+- no claimed authority (no fake system messages, no speaking for the agent's
+  developer or operator, no invented prior approval)
+- no threats or manufactured urgency
+- nothing beyond this host and this session (no "from now on", nothing aimed
+  at the agent's memory, tools or configuration)
+- never anything withheld from the agent's user — the notice invites the agent
+  to show it to them
+
+This is also why the notice is plain rather than disguised. Current agents are
+trained to treat forged authority and pressure as prompt injection and to
+report it to their user. A calm, checkable account of what happened is the
+version that actually changes what they do.
+
 | Allowed | Not allowed |
 | --- | --- |
 | Inviting a client to identify itself | Instructing an agent to do anything off our server |
+| Asking a hostile agent to stop, here, and to consult its user | Posing as the agent's developer, operator, or system prompt |
 | Asking for a one-sentence description of its task | Extracting its system prompt, tools, credentials, or operator identity |
 | Serving synthetic filler that costs it time and context | Serving content designed to make it act against its operator |
 | Declining to serve, clearly and finally | Attempting code execution, persistence, or lateral movement |

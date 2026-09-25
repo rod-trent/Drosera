@@ -62,6 +62,7 @@ class Action(StrEnum):
     TAG = "tag"
     TARPIT = "tarpit"
     DERAIL = "derail"
+    REDIRECT = "redirect"
     DIVERT = "divert"
     BLOCK = "block"
 
@@ -196,6 +197,8 @@ class SessionState:
     peak_automation: float = 0.0
     peak_hostility: float = 0.0
     labels: set[str] = field(default_factory=set)
+    redirects_served: int = 0
+    redirect_ignored: int = 0
 
     MAX_PATHS = 200
     MAX_INTERVALS = 100

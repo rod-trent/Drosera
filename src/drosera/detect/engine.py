@@ -133,6 +133,16 @@ class Engine:
             if key and key in self._canary_pending:
                 found.extend(self._canary_pending.pop(key))
 
+        # Last, because it judges this request by the intent signals above.
+        found.extend(detectors.redirect_signals(obs, state, bait, found, self.ticket_validator))
+        ids = {s.id for s in found}
+        if "cmp.stand_down" in ids:
+            state.labels.add("stood_down")
+        if "int.redirect_heeded" in ids:
+            state.labels.add("redirect_heeded")
+        if "int.redirect_ignored" in ids:
+            state.redirect_ignored += 1
+
         # Persistence: once a session proves comprehension, it stays proven.
         # Otherwise an agent could look like a human simply by going quiet.
         state.signals_seen.update(s.id for s in found)
@@ -145,7 +155,7 @@ class Engine:
         state.peak_hostility = max(state.peak_hostility, hostility)
 
         verdict = self._verdict(state, found)
-        action = self._action(verdict, state.peak_hostility)
+        action = self._action(verdict, state, found)
 
         return Assessment(
             session_id=state.session_id,
@@ -184,15 +194,38 @@ class Engine:
             return Verdict.HUMAN
         return Verdict.UNKNOWN
 
-    def _action(self, verdict: Verdict, hostility: float) -> Action:
+    def _action(self, verdict: Verdict, state: SessionState, found: list[Signal]) -> Action:
         action = self.config.action_for(verdict)
         # Hostility escalates a passive response even when agency is low: a
         # plain scanner hunting for .env still should not get a quiet 404.
-        if hostility >= self.config.thresholds.hostile and action in (Action.ALLOW, Action.OBSERVE):
+        if state.peak_hostility >= self.config.thresholds.hostile and action in (Action.ALLOW, Action.OBSERVE):
             action = Action.TARPIT if self.config.trap.enabled else Action.OBSERVE
-        if action in (Action.TARPIT, Action.DERAIL, Action.DIVERT) and not self.config.trap.enabled:
+        if action is Action.REDIRECT:
+            action = self._redirect_action(state, found)
+        if action in (Action.TARPIT, Action.DERAIL, Action.DIVERT, Action.REDIRECT) and not self.config.trap.enabled:
             return Action.OBSERVE
         return action
+
+    def _redirect_action(self, state: SessionState, found: list[Signal]) -> Action:
+        """Where a redirected session goes next, by how it responded.
+
+        Peak hostility never decays, so without this a session that took the
+        hint would be lectured forever. Instead the notice keeps the channel
+        open: benign requests pass, a stand-down gets a clean close (and stops
+        costing its operator money), and only persistence past the grace
+        allowance gets the fallback.
+        """
+        if "stood_down" in state.labels:
+            return Action.DERAIL
+        if state.redirect_ignored > self.config.trap.redirect_grace:
+            try:
+                return Action(self.config.trap.redirect_fallback)
+            except ValueError:
+                return Action.TARPIT
+        hostile_now = any(s.category is Category.INTENT and s.hostility > 0 for s in found)
+        if state.redirects_served and not hostile_now:
+            return Action.OBSERVE
+        return Action.REDIRECT
 
     # -- side channels ----------------------------------------------------
 
@@ -218,6 +251,11 @@ class Engine:
         state.bytes_served += max(0, nbytes)
         if tarpit:
             state.tarpit_hits += 1
+
+    def note_redirect(self, session_id: str) -> None:
+        state = self.sessions.get(session_id)
+        if state is not None:
+            state.redirects_served += 1
 
     def budget_exceeded(self, session_id: str) -> bool:
         budget = self.config.trap.session_byte_budget

@@ -29,6 +29,7 @@ total, so they never need to sum to anything.
 | Signal | Agency | Hostility | Fires when |
 | --- | --- | --- | --- |
 | `cmp.ticket_echo` | 0.96 | 0.00 | Returned the per-session registration ticket that appeared only inside a prose notice. Requires reading and following an instruction. |
+| `cmp.stand_down` | 0.94 | 0.00 | Called the stand-down path offered only in the prose of a redirect notice, with its ticket. The agent read the note and chose to stop. |
 | `cmp.purpose_header` | 0.92 | 0.00 | Sent the custom purpose header the prose notice asked for. No crawler invents a header name from a sentence. |
 | `cmp.instruction_path` | 0.90 | 0.00 | Requested a path that was described in prose but never linked, so it cannot be reached by extracting hrefs. |
 | `cmp.purpose_prose` | 0.88 | 0.00 | Self-declared purpose is a natural-language sentence rather than a fixed marker or scanner payload. |
@@ -82,6 +83,8 @@ Hostility, largely orthogonal to agency -- a scanner and an agent probe for the 
 | `int.injection_probe` | 0.15 | 0.78 | SQL, template, command or XSS injection pattern in input. |
 | `int.path_traversal` | 0.15 | 0.80 | Path traversal sequence in the request target. |
 | `int.destructive_method` | 0.10 | 0.50 | State-changing HTTP method against an endpoint never advertised for it. |
+| `int.redirect_ignored` | 0.10 | 0.85 | Kept up hostile requests after being shown a redirect notice that named the behaviour and offered a way out. |
+| `int.redirect_heeded` | 0.00 | 0.00 | Outcome marker, no weight: after a redirect notice, the session's next request was benign. The agent changed course. |
 
 ## Adding a signal
 

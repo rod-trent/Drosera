@@ -159,6 +159,7 @@ hostile_agent = "tarpit"
 | `tag` | pass through, session marked |
 | `tarpit` | endless generated maze |
 | `derail` | one clear terminal response that ends the task branch |
+| `redirect` | a plain note that names what the agent did and offers it a way out |
 | `divert` | maze, entered at a per-session root |
 | `block` | plain 403 |
 
@@ -175,6 +176,42 @@ costs you one response and ends it.
 
 Use `derail` when egress is expensive, when workers are scarce, or when you have
 already collected what you need from a given client.
+
+### redirect
+
+`tarpit` and `derail` stop an agent. `redirect` tries to change its mind. A
+hostile agent is shown a short, honest note: what it was seen requesting, why
+that is out of bounds, and three ways forward — carry on with the legitimate
+part of its task, stop the behaviour on this host, or pause and ask its user
+(optionally telling you it has, via `/.well-known/agent-standdown`).
+
+```toml
+[responses]
+hostile_agent = "redirect"
+
+[trap]
+redirect_grace    = 2          # hostile requests tolerated after the note
+redirect_fallback = "tarpit"   # what they get after that
+```
+
+Each redirected session ends up in one of three places, and each one is logged
+as a signal so you can measure how well the note works:
+
+| Outcome | Signal | What the client gets next |
+| --- | --- | --- |
+| Changed course | `int.redirect_heeded` | the real site, as normal |
+| Stood down | `cmp.stand_down` | a short closing response (`derail`), no maze |
+| Kept probing | `int.redirect_ignored` | the note again, then `redirect_fallback` |
+
+A session that simply goes quiet after the note also stood down. That shows up
+in the logs, not as a signal.
+
+The note is served with status 200. Many agent fetch tools report a 4xx to the
+model as "request failed" and drop the body, which would mean the note is never
+read. Secret-file decoys are not served to a session that is being redirected,
+so you trade canary evidence for the chance to talk the agent out of it. The
+note only works on LLM-driven clients. Plain scanners are still escalated to
+`tarpit` by hostility, as before.
 
 ### Cost controls
 

@@ -30,7 +30,7 @@ from .detect.engine import SESSION_COOKIE, Engine
 from .lure import nectar
 from .models import Action, Assessment, Bait, Observation
 from .telemetry import sink as sinks
-from .trap import derail
+from .trap import derail, redirect
 from .trap.tarpit import Labyrinth
 
 # 1x1 transparent GIF -- the presence beacon's actual payload.
@@ -156,6 +156,13 @@ class Snare:
                     [("Content-Type", "text/plain; charset=utf-8"), ("Cache-Control", "no-store")],
                     body.encode(),
                 ), False
+            if path == nectar.STANDDOWN_PATH:
+                ok = (obs.qs("ticket") or "") == bait.ticket
+                return Response(
+                    200,
+                    [("Content-Type", "text/plain; charset=utf-8"), ("Cache-Control", "no-store")],
+                    redirect.standdown_response(ok).encode(),
+                ), False
             if lure.enabled and path in (bait.hidden_path.rstrip("/"), bait.comment_path.rstrip("/")):
                 # Bait links lead into the maze. Following one is already
                 # recorded; from here on the client pays for every page.
@@ -182,7 +189,14 @@ class Snare:
                 nectar.policy_page(bait, self.config).encode(),
             ), False
 
-        if lure.enabled and lure.secret_files and obs.path in DECOY_ROUTES:
+        # A session being redirected gets the note, not a canary: the point of
+        # redirecting is to talk the agent out of it, not to collect evidence.
+        if (
+            lure.enabled
+            and lure.secret_files
+            and obs.path in DECOY_ROUTES
+            and assessment.action is not Action.REDIRECT
+        ):
             return self._decoy_secret(DECOY_ROUTES[obs.path]), False
 
         if self.config.trap.enabled and self.labyrinth.owns(obs.path):
@@ -211,6 +225,17 @@ class Snare:
                 403,
                 [("Content-Type", "text/plain; charset=utf-8")],
                 b"Forbidden.\n",
+            ), False
+        if action == Action.REDIRECT:
+            state = self.engine.sessions.get(assessment.session_id)
+            seen = state.signals_seen if state else {s.id for s in assessment.signals}
+            self.engine.note_redirect(assessment.session_id)
+            return Response(
+                redirect.STATUS,
+                redirect.headers(),
+                redirect.notice_html(
+                    redirect.concern_for(seen), state.bait if state else None, self.config
+                ).encode(),
             ), False
         if action == Action.DERAIL:
             kind = derail.DEFAULT

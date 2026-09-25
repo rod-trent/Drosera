@@ -69,7 +69,7 @@ clients. A visible footer line pointing at `/llms.txt` catches browser-driving
 agents. `robots.txt` and `llms.txt` are served per-session so each carries its
 own ticket.
 
-**Detect** — 30 signals across five categories, scored on three independent
+**Detect** — 33 signals across five categories, scored on three independent
 axes. Embeddable as a library; runs offline against logs you already have.
 
 **Trap** — an endless deterministic maze of plausible filler that costs an agent
