@@ -6,6 +6,12 @@ All notable changes to Drosera are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-25
+
+A new way to answer a hostile agent: ask it to stand down. Existing defaults
+are unchanged; `redirect` is opt-in, and every playground score is identical
+to 0.2.0.
+
 ### Added
 
 - **`redirect` action**: instead of trapping a hostile agent, show it a plain
@@ -126,6 +132,7 @@ First release.
   share an mtime. The watcher now baselines from a live stat when watching
   starts, and reports separately when a file was already modified before then.
 
-[Unreleased]: https://github.com/rod-trent/Drosera/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rod-trent/Drosera/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/rod-trent/Drosera/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rod-trent/Drosera/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rod-trent/Drosera/releases/tag/v0.1.0

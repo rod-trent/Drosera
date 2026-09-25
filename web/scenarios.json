@@ -1,5 +1,5 @@
 {
- "drosera": "0.2.0",
+ "drosera": "0.3.0",
  "scenarios": {
   "agent": {
    "action": "tarpit",
